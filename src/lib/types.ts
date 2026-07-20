@@ -1,0 +1,60 @@
+// Mirrors the Firestore schema in the spec (Section 4).
+
+export interface ConsentRecord {
+  consentedAt: string; // ISO timestamp
+  policyVersion: string;
+  recordedBy: string;
+}
+
+export interface Employee {
+  employeeId: string;
+  fullName: string;
+  // Plaintext in this Phase 0 prototype. Spec flags hashing/salting as
+  // required before this goes past the prototype stage (Section 7).
+  pinCode: string;
+  // One 128-float descriptor per enrollment snapshot (1-3 typical).
+  faceDescriptors: number[][];
+  role: "employee" | "admin";
+  active: boolean;
+  createdAt: string;
+  consent: ConsentRecord;
+}
+
+export type PunchType = "punch_in" | "punch_out";
+
+export interface AttendanceLog {
+  logId: string;
+  employeeId: string;
+  employeeName: string;
+  timestamp: string; // ISO
+  type: PunchType;
+  matchConfidence: number; // Euclidean distance of the accepted match
+  pinConfirmed: boolean;
+  kioskId: string;
+  syncedOffline: boolean;
+}
+
+export interface SuspiciousEvent {
+  eventId: string;
+  employeeId: string;
+  employeeName: string;
+  timestamp: string;
+  reason: "wrong_pin";
+  attempts: number;
+  kioskId: string;
+}
+
+export interface Company {
+  companyId: string;
+  companyName: string;
+  adminEmail: string;
+  createdAt: string;
+}
+
+export interface Kiosk {
+  kioskId: string;
+  label: string;
+  pairedAt: string;
+  lastSeenAt: string;
+  active: boolean;
+}
