@@ -1,20 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Camera, CheckCircle2, Loader2 } from "lucide-react";
+import { ArrowLeft, Camera, CheckCircle2, Loader2, Users } from "lucide-react";
 import { CameraView } from "@/components/CameraView";
+import { RequireAdmin } from "@/components/RequireAdmin";
 import { useCamera } from "@/hooks/useCamera";
 import { useFaceModels } from "@/hooks/useFaceModels";
 import { detectSingleFaceDescriptor } from "@/lib/faceApi";
-import { createEmployee } from "@/lib/firestoreRepo";
-import { CONSENT_POLICY_VERSION, DEMO_ADMIN_EMAIL } from "@/lib/constants";
+import { createEmployee, ensureCompanyDoc } from "@/lib/firestoreRepo";
+import { hashPin } from "@/lib/pin";
+import { CONSENT_POLICY_VERSION, ADMIN_EMAIL } from "@/lib/constants";
 import type { Employee } from "@/lib/types";
 
 const MAX_SNAPSHOTS = 3;
 const PIN_PATTERN = /^\d{4,6}$/;
 
 export default function EnrollPage() {
+  return (
+    <RequireAdmin>
+      <EnrollForm />
+    </RequireAdmin>
+  );
+}
+
+function EnrollForm() {
   const { videoRef, ready, error: cameraError } = useCamera();
   const { loaded: modelsLoaded, error: modelsError } = useFaceModels();
 
@@ -22,7 +32,7 @@ export default function EnrollPage() {
   const [pinCode, setPinCode] = useState("");
   const [role, setRole] = useState<Employee["role"]>("employee");
   const [consentChecked, setConsentChecked] = useState(false);
-  const [recordedBy, setRecordedBy] = useState(DEMO_ADMIN_EMAIL);
+  const [recordedBy, setRecordedBy] = useState(ADMIN_EMAIL);
 
   const [descriptors, setDescriptors] = useState<number[][]>([]);
   const [captureStatus, setCaptureStatus] = useState<string | null>(null);
@@ -31,6 +41,10 @@ export default function EnrollPage() {
     "idle" | "saving" | "saved" | "error"
   >("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    ensureCompanyDoc();
+  }, []);
 
   const canCapture =
     ready && modelsLoaded && !capturing && descriptors.length < MAX_SNAPSHOTS;
@@ -68,10 +82,12 @@ export default function EnrollPage() {
     setSaveError(null);
     try {
       const now = new Date().toISOString();
+      const { pinHash, pinSalt } = await hashPin(pinCode);
       const employee: Employee = {
         employeeId: `emp_${crypto.randomUUID()}`,
         fullName: fullName.trim(),
-        pinCode,
+        pinHash,
+        pinSalt,
         faceDescriptors: descriptors,
         role,
         active: true,
@@ -96,12 +112,20 @@ export default function EnrollPage() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-      <Link
-        href="/"
-        className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
-      >
-        <ArrowLeft className="h-4 w-4" /> Back
-      </Link>
+      <div className="flex items-center justify-between">
+        <Link
+          href="/"
+          className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back
+        </Link>
+        <Link
+          href="/admin/employees"
+          className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
+        >
+          <Users className="h-4 w-4" /> Manage employees
+        </Link>
+      </div>
 
       <div>
         <h1 className="text-2xl font-semibold">Enroll employee</h1>
@@ -184,11 +208,18 @@ export default function EnrollPage() {
 
         <div className="flex flex-col gap-2 rounded-lg bg-neutral-800 p-3 text-sm">
           <p className="text-neutral-300">
-            Consent: this employee&apos;s face snapshots will be processed
-            in-browser into numeric embeddings for attendance matching.
-            Raw photos are discarded immediately; only the embeddings and
-            this consent record are stored (data-handling policy{" "}
-            {CONSENT_POLICY_VERSION}).
+            <strong>Consent to biometric data processing</strong> (data
+            handling policy {CONSENT_POLICY_VERSION}, aligned with Uganda&apos;s
+            Data Protection and Privacy Act, 2019 — have this reviewed by
+            counsel before relying on it): this employee&apos;s face is
+            captured live and converted, in this browser, into numeric
+            descriptors used only to match their face for attendance
+            punches at this company. The photo itself is never saved,
+            uploaded, or shared — only the descriptors and this consent
+            record are stored. The employee (or an admin on their behalf)
+            may request deletion of their descriptors and this consent
+            record at any time from the Manage employees page, which
+            removes them from future matching immediately.
           </p>
           <label className="flex items-center gap-2">
             <input

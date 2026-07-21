@@ -11,6 +11,7 @@ import { detectSingleFaceDescriptor } from "@/lib/faceApi";
 import { findBestMatch, type MatchResult } from "@/lib/faceMatching";
 import { nextPunchType } from "@/lib/punchLogic";
 import { playChime } from "@/lib/chime";
+import { verifyPin } from "@/lib/pin";
 import {
   fetchAllAttendance,
   fetchAllEmployees,
@@ -18,7 +19,7 @@ import {
   recordSuspiciousEvent,
 } from "@/lib/firestoreRepo";
 import {
-  DEMO_KIOSK_ID,
+  KIOSK_ID,
   DETECTION_INTERVAL_MS,
   MAX_PIN_ATTEMPTS,
   PUNCH_DEBOUNCE_MS,
@@ -46,6 +47,7 @@ export default function KioskPage() {
   const [candidate, setCandidate] = useState<MatchResult | null>(null);
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState<string | null>(null);
+  const [verifyingPin, setVerifyingPin] = useState(false);
   const [successInfo, setSuccessInfo] = useState<SuccessInfo | null>(null);
 
   const debounceUntilRef = useRef<Map<string, number>>(new Map());
@@ -151,7 +153,11 @@ export default function KioskPage() {
     if (!candidate) return;
     const employee = candidate.employee;
 
-    if (pin !== employee.pinCode) {
+    setVerifyingPin(true);
+    const pinCorrect = await verifyPin(pin, employee.pinSalt, employee.pinHash);
+    setVerifyingPin(false);
+
+    if (!pinCorrect) {
       const attempts = (pinAttemptsRef.current.get(employee.employeeId) ?? 0) + 1;
       pinAttemptsRef.current.set(employee.employeeId, attempts);
 
@@ -163,7 +169,7 @@ export default function KioskPage() {
           timestamp: new Date().toISOString(),
           reason: "wrong_pin",
           attempts,
-          kioskId: DEMO_KIOSK_ID,
+          kioskId: KIOSK_ID,
         });
         playChime("error");
         setStatus("suspicious");
@@ -186,7 +192,7 @@ export default function KioskPage() {
       type: punchType,
       matchConfidence: candidate.distance,
       pinConfirmed: true,
-      kioskId: DEMO_KIOSK_ID,
+      kioskId: KIOSK_ID,
       syncedOffline: !online,
     };
 
@@ -253,7 +259,12 @@ export default function KioskPage() {
             <UserCheck className="h-5 w-5 text-blue-400" />
             Hi {candidate.employee.fullName}, enter your PIN
           </div>
-          <PinPad value={pin} onChange={setPin} onSubmit={handlePinSubmit} />
+          <PinPad
+            value={pin}
+            onChange={setPin}
+            onSubmit={handlePinSubmit}
+            disabled={verifyingPin}
+          />
           {pinError && <p className="text-sm text-red-400">{pinError}</p>}
           <button
             type="button"

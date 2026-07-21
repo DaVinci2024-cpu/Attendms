@@ -1,0 +1,41 @@
+rules_version = '2';
+
+// Single real company, single admin, no kiosk login (see README + spec
+// Section 5). Paste this whole file into Firebase console -> Firestore
+// Database -> Rules -> Publish.
+//
+// Known, accepted tradeoff: the kiosk has no login of its own, so
+// `employees` (including face descriptors) must stay world-readable for
+// the offline-matching architecture to work at all — anyone who obtains
+// this project's public web config can read every employee's descriptors.
+// Physical security of the kiosk device and restricting who gets the
+// Firebase config are the real mitigations here, not this rules file.
+// Writes to employees, and all reads/writes beyond kiosk punches, require
+// the one signed-in admin account.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /companies/{companyId} {
+      allow read, write: if request.auth != null;
+
+      match /employees/{employeeId} {
+        allow read: if true;
+        allow create, update, delete: if request.auth != null;
+      }
+
+      // Attendance is an append-only log: the kiosk creates punches without
+      // signing in, but nothing (including the admin) can edit or delete a
+      // recorded punch after the fact.
+      match /attendance/{logId} {
+        allow create: if true;
+        allow read: if request.auth != null;
+        allow update, delete: if false;
+      }
+
+      match /suspiciousEvents/{eventId} {
+        allow create: if true;
+        allow read: if request.auth != null;
+        allow update, delete: if false;
+      }
+    }
+  }
+}

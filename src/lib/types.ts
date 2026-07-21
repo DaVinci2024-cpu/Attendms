@@ -9,9 +9,10 @@ export interface ConsentRecord {
 export interface Employee {
   employeeId: string;
   fullName: string;
-  // Plaintext in this Phase 0 prototype. Spec flags hashing/salting as
-  // required before this goes past the prototype stage (Section 7).
-  pinCode: string;
+  // PBKDF2-SHA256 hash + per-employee salt (see src/lib/pin.ts) — never
+  // the plaintext PIN.
+  pinHash: string;
+  pinSalt: string;
   // One 128-float descriptor per enrollment snapshot (1-3 typical).
   faceDescriptors: number[][];
   role: "employee" | "admin";

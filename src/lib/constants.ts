@@ -1,11 +1,15 @@
-// Phase 0 prototype: a single hardcoded "demo company" stands in for real
-// multi-tenant company documents (see spec section on Build order).
-export const DEMO_COMPANY_ID = "demo_company";
-export const DEMO_COMPANY_NAME = "Demo Company";
-export const DEMO_ADMIN_EMAIL = "admin@demo.local";
-export const DEMO_KIOSK_ID = "kiosk_demo_01";
+// Single real company for now (no multi-tenant auth/claims yet — that's
+// still later work if this ever needs to serve more than one company).
+// Configure via env vars for your actual deployment; the fallbacks below
+// only exist so local dev/build doesn't hard-fail with nothing set.
+export const COMPANY_ID = process.env.NEXT_PUBLIC_COMPANY_ID || "company_default";
+export const COMPANY_NAME =
+  process.env.NEXT_PUBLIC_COMPANY_NAME || "Unnamed Company";
+export const ADMIN_EMAIL =
+  process.env.NEXT_PUBLIC_ADMIN_EMAIL || "admin@example.com";
+export const KIOSK_ID = process.env.NEXT_PUBLIC_KIOSK_ID || "kiosk_lobby_01";
 
-export const CONSENT_POLICY_VERSION = "v1";
+export const CONSENT_POLICY_VERSION = "v2-uganda-dppa-2019";
 
 // Euclidean distance below which a face is considered a candidate match.
 // Spec starting point of 0.5; expect to tune per-deployment/lighting.
