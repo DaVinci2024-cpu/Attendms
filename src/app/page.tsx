@@ -46,7 +46,12 @@ interface SuccessInfo {
 }
 
 export default function Home() {
-  const { videoRef, ready: cameraReady, error: cameraError } = useCamera();
+  const [status, setStatus] = useState<KioskStatus>("idle");
+  const {
+    videoRef,
+    ready: cameraReady,
+    error: cameraError,
+  } = useCamera(status !== "idle");
   const { loaded: modelsLoaded, error: modelsError } = useFaceModels();
 
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -57,7 +62,6 @@ export default function Home() {
   const [headline, setHeadline] = useState(`Welcome to ${COMPANY_NAME}`);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const [status, setStatus] = useState<KioskStatus>("idle");
   const [intent, setIntent] = useState<PunchType | null>(null);
   const [candidate, setCandidate] = useState<MatchResult | null>(null);
   const [pin, setPin] = useState("");
