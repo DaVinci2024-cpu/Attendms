@@ -98,7 +98,9 @@ export default function Home() {
       // issue, network hiccup, etc.) is surfaced instead of silently
       // leaving the kiosk with stale/empty data.
       if (navigator.onLine) {
-        setLoadError(err instanceof Error ? err.message : "Failed to load data");
+        setLoadError(
+          `employees — ${err instanceof Error ? err.message : "failed to load"}`
+        );
       }
     }
   }, []);
@@ -107,21 +109,32 @@ export default function Home() {
     let cancelled = false;
 
     async function loadInitialData() {
+      // Fetched separately (not Promise.all'd) so a failure in the
+      // non-critical display-settings read can never mask, or be masked
+      // by, the employees read that the kiosk actually depends on — and
+      // so the error banner names which one actually failed.
       try {
-        const [emps, display] = await Promise.all([
-          fetchAllEmployees(),
-          fetchKioskDisplaySettings(),
-        ]);
+        const emps = await fetchAllEmployees();
         if (cancelled) return;
         setEmployees(emps);
         setLoadError(null);
-        if (display?.headline) setHeadline(display.headline);
-        setNotice(display?.noticeActive && display.notice ? display.notice : null);
       } catch (err) {
         if (cancelled) return;
         if (navigator.onLine) {
-          setLoadError(err instanceof Error ? err.message : "Failed to load data");
+          setLoadError(
+            `employees — ${err instanceof Error ? err.message : "failed to load"}`
+          );
         }
+      }
+
+      try {
+        const display = await fetchKioskDisplaySettings();
+        if (cancelled) return;
+        if (display?.headline) setHeadline(display.headline);
+        setNotice(display?.noticeActive && display.notice ? display.notice : null);
+      } catch (err) {
+        if (cancelled || !navigator.onLine) return;
+        console.error("Failed to load kiosk display settings:", err);
       }
     }
 
@@ -308,7 +321,7 @@ export default function Home() {
         <div className="flex items-center gap-2">
           {loadError && (
             <span className="rounded-full bg-red-900/50 px-3 py-1 text-xs text-red-300">
-              Couldn&apos;t load employee data: {loadError}
+              Couldn&apos;t load {loadError}
             </span>
           )}
           {!online && (
