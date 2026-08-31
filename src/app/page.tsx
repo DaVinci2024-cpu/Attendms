@@ -61,6 +61,7 @@ export default function Home() {
   );
   const [headline, setHeadline] = useState(`Welcome to ${COMPANY_NAME}`);
   const [notice, setNotice] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [intent, setIntent] = useState<PunchType | null>(null);
   const [scanHint, setScanHint] = useState<string | null>(null);
@@ -86,9 +87,16 @@ export default function Home() {
       ]);
       setEmployees(emps);
       setAttendanceLogs(logs);
-    } catch {
-      // Firestore serves from the local IndexedDB cache when offline; a
-      // failure here just means the cache is still empty (first-ever load).
+      setLoadError(null);
+    } catch (err) {
+      // Firestore serves from the local IndexedDB cache when offline, so a
+      // failure while genuinely offline just means the cache is still
+      // empty — not worth alarming over. A failure while online (rules
+      // issue, network hiccup, etc.) is surfaced instead of silently
+      // leaving the kiosk with stale/empty data.
+      if (navigator.onLine) {
+        setLoadError(err instanceof Error ? err.message : "Failed to load data");
+      }
     }
   }, []);
 
@@ -105,11 +113,14 @@ export default function Home() {
         if (cancelled) return;
         setEmployees(emps);
         setAttendanceLogs(logs);
+        setLoadError(null);
         if (display?.headline) setHeadline(display.headline);
         setNotice(display?.noticeActive && display.notice ? display.notice : null);
-      } catch {
-        // Firestore serves from the local IndexedDB cache when offline; a
-        // failure here just means the cache is still empty (first-ever load).
+      } catch (err) {
+        if (cancelled) return;
+        if (navigator.onLine) {
+          setLoadError(err instanceof Error ? err.message : "Failed to load data");
+        }
       }
     }
 
@@ -183,6 +194,11 @@ export default function Home() {
     setIntent(punchType);
     setScanHint(null);
     setStatus("scanning");
+    // Refresh employees/attendance right as a punch starts, so a kiosk
+    // tab left open for a while still sees anyone enrolled since it loaded
+    // (camera/model startup gives this a moment to land before scanning
+    // actually needs it).
+    refreshData();
   }
 
   function backToIdle() {
@@ -277,11 +293,18 @@ export default function Home() {
         <span className="text-xs font-semibold uppercase tracking-widest text-neutral-600">
           Attendms
         </span>
-        {!online && (
-          <span className="flex items-center gap-1 rounded-full bg-amber-900/50 px-3 py-1 text-xs text-amber-300">
-            <WifiOff className="h-3 w-3" /> Offline — punches queue locally
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {loadError && (
+            <span className="rounded-full bg-red-900/50 px-3 py-1 text-xs text-red-300">
+              Couldn&apos;t load employee data: {loadError}
+            </span>
+          )}
+          {!online && (
+            <span className="flex items-center gap-1 rounded-full bg-amber-900/50 px-3 py-1 text-xs text-amber-300">
+              <WifiOff className="h-3 w-3" /> Offline — punches queue locally
+            </span>
+          )}
+        </div>
       </header>
 
       <main className="flex flex-1 flex-col items-center justify-center gap-5 px-4 pb-10">

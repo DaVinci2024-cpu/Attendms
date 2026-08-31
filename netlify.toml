@@ -1,0 +1,14 @@
+[build]
+  command = "npm run build"
+  publish = "out"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Static export: every real route already has its own prebuilt HTML file
+# (e.g. admin/dashboard.html), so no SPA catch-all redirect is needed —
+# only a real 404 falls through to this.
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404

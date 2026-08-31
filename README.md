@@ -95,6 +95,37 @@ HTTPS (e.g. Vercel, or any host with a TLS certificate).
   retrying forever. A successful punch debounces that employee for ~5
   seconds.
 
+## Deploying to Netlify
+
+Every route in this app is a client component with no server-side data
+needs — Firestore, Firebase Auth, and face-api all run in the browser — so
+it builds as a plain static site (`next.config.ts` sets `output: "export"`)
+and needs no serverless functions to host.
+
+1. Push this repo to GitHub (already done if you're reading this from the
+   repo).
+2. In the [Netlify dashboard](https://app.netlify.com), **Add new site ->
+   Import an existing project**, pick this repo. Netlify should read
+   `netlify.toml` automatically:
+   - Build command: `npm run build`
+   - Publish directory: `out`
+3. Before the first deploy, add every variable from your `.env.local` under
+   **Site configuration -> Environment variables** (the same
+   `NEXT_PUBLIC_FIREBASE_*`, `NEXT_PUBLIC_COMPANY_*`,
+   `NEXT_PUBLIC_ADMIN_EMAIL`, `NEXT_PUBLIC_KIOSK_ID` values) — the build
+   needs them to produce a working site, and `.env.local` itself is never
+   committed to the repo.
+4. Deploy. Netlify gives you a `https://<something>.netlify.app` URL.
+5. **Required extra step**: Firebase Auth only allows sign-in from domains
+   you've explicitly authorized. In Firebase console -> Authentication ->
+   Settings -> **Authorized domains**, add your new Netlify domain (and
+   your custom domain too, if you attach one later). Skipping this makes
+   admin/employee portal sign-in fail with an unauthorized-domain error —
+   the kiosk's face+PIN punching still works fine either way, since it
+   never signs in.
+6. Camera access requires HTTPS, which Netlify provides by default, so the
+   kiosk will work on the deployed URL without any extra TLS setup.
+
 ## Compliance note
 
 The consent text shown at enrollment (`src/app/enroll/page.tsx`) is
