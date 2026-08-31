@@ -12,6 +12,13 @@ import { useEffect } from "react";
 export function RegisterServiceWorker() {
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+    // Registering this during local dev actively fights next dev's hot
+    // reload/fast refresh — the service worker's cache-first strategy for
+    // /_next/static/* can keep serving an old JS bundle indefinitely even
+    // after pulling new code and restarting the dev server, which looks
+    // exactly like "my fix isn't taking effect" with no obvious cause.
+    // Only register it in production builds.
+    if (process.env.NODE_ENV !== "production") return;
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   }, []);
 
