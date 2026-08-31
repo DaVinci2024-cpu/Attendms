@@ -38,14 +38,16 @@ export type PunchType = "punch_in" | "punch_out";
 
 // One correction made to a punch after the fact — appended, never
 // overwritten, so the full history of edits survives alongside the
-// current values.
+// current values. previousTimestamp/previousType are null when the record
+// didn't exist before this entry — i.e. a forgotten shift being closed,
+// not a correction to an existing punch.
 export interface AttendanceEdit {
   editedBy: string; // uid of whoever made the edit
   editedByName: string;
   reason: string;
   editedAt: string; // ISO
-  previousTimestamp: string;
-  previousType: PunchType;
+  previousTimestamp: string | null;
+  previousType: PunchType | null;
 }
 
 export interface AttendanceLog {

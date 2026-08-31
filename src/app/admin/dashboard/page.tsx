@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { History, Loader2, Pencil, X } from "lucide-react";
+import { History, LogOut, Loader2, Pencil, X } from "lucide-react";
 import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
 import {
+  closeShift,
   editAttendanceLog,
   fetchAllAttendance,
   fetchAllEmployees,
@@ -44,6 +45,10 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingLog, setEditingLog] = useState<AttendanceLog | null>(null);
+  const [closingShiftFor, setClosingShiftFor] = useState<{
+    employeeId: string;
+    employeeName: string;
+  } | null>(null);
 
   const [employeeFilter, setEmployeeFilter] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -73,6 +78,11 @@ function Dashboard() {
   function handleLogUpdated(updated: AttendanceLog) {
     setLogs((prev) => prev.map((l) => (l.logId === updated.logId ? updated : l)));
     setEditingLog(null);
+  }
+
+  function handleShiftClosed(newLog: AttendanceLog) {
+    setLogs((prev) => [...prev, newLog]);
+    setClosingShiftFor(null);
   }
 
   const allSessions = useMemo(() => pairSessions(logs), [logs]);
@@ -208,7 +218,24 @@ function Dashboard() {
                           onEditClick={() => setEditingLog(s.punchOut)}
                         />
                       ) : (
-                        <span className="text-emerald-400">still in</span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-emerald-400">still in</span>
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setClosingShiftFor({
+                                  employeeId: s.employeeId,
+                                  employeeName: s.employeeName,
+                                })
+                              }
+                              className="flex items-center gap-1 rounded-full bg-neutral-800 px-2 py-0.5 text-xs text-neutral-300 hover:bg-neutral-700"
+                              title="Close this shift (employee forgot to punch out)"
+                            >
+                              <LogOut className="h-3 w-3" /> Close shift
+                            </button>
+                          )}
+                        </span>
                       )}
                     </td>
                     <td className="px-4 py-2.5">
@@ -236,6 +263,17 @@ function Dashboard() {
           editorName={email ?? uid}
           onClose={() => setEditingLog(null)}
           onSaved={handleLogUpdated}
+        />
+      )}
+
+      {closingShiftFor && (
+        <CloseShiftModal
+          employeeId={closingShiftFor.employeeId}
+          employeeName={closingShiftFor.employeeName}
+          editorUid={uid}
+          editorName={email ?? uid}
+          onClose={() => setClosingShiftFor(null)}
+          onSaved={handleShiftClosed}
         />
       )}
     </div>
@@ -345,7 +383,10 @@ function EditAttendanceModal({
             {log.edits.map((edit, i) => (
               <p key={i}>
                 {new Date(edit.editedAt).toLocaleString()} — {edit.editedByName}: &quot;
-                {edit.reason}&quot; (was {new Date(edit.previousTimestamp).toLocaleString()})
+                {edit.reason}&quot;
+                {edit.previousTimestamp
+                  ? ` (was ${new Date(edit.previousTimestamp).toLocaleString()})`
+                  : " (shift closed manually)"}
               </p>
             ))}
           </div>
@@ -388,6 +429,108 @@ function EditAttendanceModal({
           >
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
             Save correction
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CloseShiftModal({
+  employeeId,
+  employeeName,
+  editorUid,
+  editorName,
+  onClose,
+  onSaved,
+}: {
+  employeeId: string;
+  employeeName: string;
+  editorUid: string;
+  editorName: string;
+  onClose: () => void;
+  onSaved: (log: AttendanceLog) => void;
+}) {
+  const [newTime, setNewTime] = useState(() => toDatetimeLocalValue(new Date().toISOString()));
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    if (!reason.trim()) {
+      setError("A reason is required.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const newIso = new Date(newTime).toISOString();
+      const log = await closeShift(
+        employeeId,
+        employeeName,
+        newIso,
+        reason.trim(),
+        editorUid,
+        editorName
+      );
+      onSaved(log);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to close shift");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+      <div className="flex w-full max-w-sm flex-col gap-4 rounded-xl bg-neutral-900 p-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Close {employeeName}&apos;s shift</h2>
+          <button type="button" onClick={onClose} className="text-neutral-400 hover:text-neutral-200">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <p className="text-sm text-neutral-400">
+          Records a punch-out for a shift the employee forgot to end.
+        </p>
+
+        <label className="flex flex-col gap-1 text-sm">
+          Punch-out time
+          <input
+            type="datetime-local"
+            className="rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-600"
+            value={newTime}
+            onChange={(e) => setNewTime(e.target.value)}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          Reason (required)
+          <textarea
+            className="min-h-20 rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-600"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. Employee forgot to punch out, confirmed they left around 5pm"
+          />
+        </label>
+
+        {error && <p className="text-sm text-red-400">{error}</p>}
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-lg bg-neutral-800 px-4 py-2 text-sm text-neutral-300 hover:bg-neutral-700"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-neutral-700"
+          >
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            Close shift
           </button>
         </div>
       </div>

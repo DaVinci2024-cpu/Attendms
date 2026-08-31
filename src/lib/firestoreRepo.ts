@@ -237,3 +237,40 @@ export async function editAttendanceLog(
     edits: arrayUnion(edit),
   });
 }
+
+// Closes a forgotten shift: creates the missing punch_out directly (not an
+// edit to an existing record — there isn't one), with the reason baked in
+// as the record's first audit entry so it's clear this was a manual close,
+// not a real kiosk punch.
+export async function closeShift(
+  employeeId: string,
+  employeeName: string,
+  timestamp: string,
+  reason: string,
+  editedBy: string,
+  editedByName: string
+): Promise<AttendanceLog> {
+  const log: AttendanceLog = {
+    logId: `log_${crypto.randomUUID()}`,
+    employeeId,
+    employeeName,
+    timestamp,
+    type: "punch_out",
+    matchConfidence: 0,
+    pinConfirmed: false,
+    kioskId: "admin_correction",
+    syncedOffline: false,
+    edits: [
+      {
+        editedBy,
+        editedByName,
+        reason,
+        editedAt: new Date().toISOString(),
+        previousTimestamp: null,
+        previousType: null,
+      },
+    ],
+  };
+  await setDoc(doc(attendanceCol(), log.logId), log);
+  return log;
+}

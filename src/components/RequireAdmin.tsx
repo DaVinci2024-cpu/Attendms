@@ -12,9 +12,11 @@ import { getAuthClient } from "@/lib/auth";
 import {
   ensureAdminBootstrap,
   fetchCompany,
+  fetchEmployeeByPortalUsername,
   fetchPermissionGrant,
 } from "@/lib/firestoreRepo";
 import { grantHas } from "@/lib/permissions";
+import { portalEmail } from "@/lib/constants";
 import { AdminNav } from "@/components/AdminNav";
 import type { Permission, PermissionGrant } from "@/lib/types";
 
@@ -41,7 +43,7 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [isAdmin, setIsAdmin] = useState<boolean | undefined>(undefined);
   const [grant, setGrant] = useState<PermissionGrant | null>(null);
-  const [email, setEmail] = useState("");
+  const [emailOrUsername, setEmailOrUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [signingIn, setSigningIn] = useState(false);
@@ -95,9 +97,25 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
     setSigningIn(true);
     setError(null);
     try {
-      await signInWithEmailAndPassword(getAuthClient(), email, password);
+      const input = emailOrUsername.trim();
+      // Admins sign in with their real email; an employee granted a
+      // permission has no real email (their portal account uses a
+      // synthetic one) — the same username -> account lookup /portal/login
+      // uses resolves it here too, before verifying the real password
+      // normally. Same account, same password, either entry point.
+      let loginEmail = input;
+      if (!input.includes("@")) {
+        const employee = await fetchEmployeeByPortalUsername(input.toLowerCase());
+        if (!employee) {
+          setError("Incorrect email/username or password.");
+          setSigningIn(false);
+          return;
+        }
+        loginEmail = portalEmail(employee.employeeId);
+      }
+      await signInWithEmailAndPassword(getAuthClient(), loginEmail, password);
     } catch {
-      setError("Incorrect email or password.");
+      setError("Incorrect email/username or password.");
     } finally {
       setSigningIn(false);
     }
@@ -121,18 +139,20 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
           <div>
             <h1 className="text-xl font-semibold">Admin sign-in</h1>
             <p className="text-sm text-neutral-400">
-              This is an admin-only area. Sign in with the account created
-              for this company in the Firebase console.
+              Admin: sign in with the account created for this company in
+              the Firebase console. Supervisor: sign in with your portal
+              username — you&apos;ll only see what you&apos;ve been granted
+              access to.
             </p>
           </div>
           <label className="flex flex-col gap-1 text-sm">
-            Email
+            Email or username
             <input
-              type="email"
+              type="text"
               required
               className="rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-600"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              value={emailOrUsername}
+              onChange={(e) => setEmailOrUsername(e.target.value)}
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
