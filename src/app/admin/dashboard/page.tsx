@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Users } from "lucide-react";
+import { ArrowLeft, CalendarDays, Loader2, Users } from "lucide-react";
 import { RequireAdmin } from "@/components/RequireAdmin";
 import { fetchAllAttendance, fetchAllEmployees } from "@/lib/firestoreRepo";
 import { pairSessions, formatDuration } from "@/lib/hours";
@@ -86,12 +86,20 @@ function Dashboard() {
         >
           <ArrowLeft className="h-4 w-4" /> Back
         </Link>
-        <Link
-          href="/admin/employees"
-          className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
-        >
-          <Users className="h-4 w-4" /> Manage employees
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/admin/schedule"
+            className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
+          >
+            <CalendarDays className="h-4 w-4" /> Schedule
+          </Link>
+          <Link
+            href="/admin/employees"
+            className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
+          >
+            <Users className="h-4 w-4" /> Manage employees
+          </Link>
+        </div>
       </div>
 
       <h1 className="text-2xl font-semibold">Attendance dashboard</h1>

@@ -79,6 +79,12 @@ function EmployeeList() {
             <LayoutDashboard className="h-4 w-4" /> Dashboard
           </Link>
           <Link
+            href="/admin/schedule"
+            className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
+          >
+            <CalendarDays className="h-4 w-4" /> Schedule
+          </Link>
+          <Link
             href="/enroll"
             className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
           >
@@ -118,12 +124,6 @@ function EmployeeList() {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <Link
-                href={`/admin/employees/${employee.employeeId}`}
-                className="flex items-center gap-1 rounded-lg bg-neutral-800 px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-700"
-              >
-                <CalendarDays className="h-4 w-4" /> Schedule
-              </Link>
               <button
                 type="button"
                 onClick={() => handleDelete(employee.employeeId, employee.fullName)}

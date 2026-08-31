@@ -20,15 +20,12 @@ service cloud.firestore {
       match /employees/{employeeId} {
         allow read: if true;
         allow create, update, delete: if request.auth != null;
+      }
 
-        // Schedules live in their own subcollection (not on the employee
-        // doc above) specifically so they stay admin-only even though the
-        // employee doc itself has to be world-readable for the kiosk.
-        // Subcollection rules are independent of the parent match block —
-        // Firestore does not inherit permissions downward.
-        match /shifts/{shiftId} {
-          allow read, write: if request.auth != null;
-        }
+      // One document per week (weekId = that week's Monday), holding the
+      // whole spreadsheet-style grid. Admin-only for now.
+      match /schedules/{weekId} {
+        allow read, write: if request.auth != null;
       }
 
       // Attendance is an append-only log: the kiosk creates punches without

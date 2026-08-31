@@ -14,7 +14,7 @@ import type {
   AttendanceLog,
   SuspiciousEvent,
   Company,
-  Shift,
+  WeekSchedule,
 } from "./types";
 
 function companyDoc() {
@@ -33,15 +33,8 @@ function suspiciousEventsCol(): CollectionReference {
   return collection(getDb(), "companies", COMPANY_ID, "suspiciousEvents");
 }
 
-function shiftsCol(employeeId: string): CollectionReference {
-  return collection(
-    getDb(),
-    "companies",
-    COMPANY_ID,
-    "employees",
-    employeeId,
-    "shifts"
-  );
+function scheduleDoc(weekId: string) {
+  return doc(getDb(), "companies", COMPANY_ID, "schedules", weekId);
 }
 
 // Called once the admin is signed in (rules require auth to write the
@@ -101,20 +94,13 @@ export async function recordSuspiciousEvent(
   await setDoc(doc(suspiciousEventsCol(), event.eventId), event);
 }
 
-export async function createShift(shift: Shift): Promise<void> {
-  await setDoc(doc(shiftsCol(shift.employeeId), shift.shiftId), shift);
+export async function fetchWeekSchedule(
+  weekId: string
+): Promise<WeekSchedule | null> {
+  const snapshot = await getDoc(scheduleDoc(weekId));
+  return snapshot.exists() ? (snapshot.data() as WeekSchedule) : null;
 }
 
-export async function fetchShiftsForEmployee(
-  employeeId: string
-): Promise<Shift[]> {
-  const snapshot = await getDocs(shiftsCol(employeeId));
-  return snapshot.docs.map((d) => d.data() as Shift);
-}
-
-export async function deleteShift(
-  employeeId: string,
-  shiftId: string
-): Promise<void> {
-  await deleteDoc(doc(shiftsCol(employeeId), shiftId));
+export async function saveWeekSchedule(schedule: WeekSchedule): Promise<void> {
+  await setDoc(scheduleDoc(schedule.weekId), schedule);
 }

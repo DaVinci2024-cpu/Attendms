@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { LayoutDashboard, ScanFace, UserPlus, Users } from "lucide-react";
+import { CalendarDays, LayoutDashboard, ScanFace, UserPlus, Users } from "lucide-react";
 
 export default function Home() {
   return (
@@ -35,6 +35,19 @@ export default function Home() {
             <p className="font-medium">Attendance dashboard</p>
             <p className="text-sm text-neutral-400">
               Who&apos;s clocked in, punch history, hours worked
+            </p>
+          </div>
+        </Link>
+
+        <Link
+          href="/admin/schedule"
+          className="flex items-center gap-3 rounded-xl bg-neutral-900 p-5 transition hover:bg-neutral-800"
+        >
+          <CalendarDays className="h-6 w-6 text-pink-400" />
+          <div>
+            <p className="font-medium">Schedule</p>
+            <p className="text-sm text-neutral-400">
+              Spreadsheet-style weekly schedule editor
             </p>
           </div>
         </Link>

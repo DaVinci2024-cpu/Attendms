@@ -51,14 +51,27 @@ export interface SuspiciousEvent {
   kioskId: string;
 }
 
-export interface Shift {
-  shiftId: string;
-  employeeId: string;
-  date: string; // YYYY-MM-DD, local calendar date of the shift
-  startTime: string; // HH:mm, 24h
-  endTime: string; // HH:mm, 24h
-  notes: string;
-  createdAt: string;
+// A spreadsheet-style weekly schedule: rows are days, columns are
+// admin-defined time blocks, and each cell is free text (typically an
+// employee name) — both rows and columns can be renamed, added, or
+// removed, so this deliberately doesn't model shifts as structured
+// per-employee records.
+export interface ScheduleColumn {
+  columnId: string;
+  label: string;
+}
+
+export interface ScheduleRow {
+  rowId: string;
+  label: string;
+  cells: Record<string, string>; // keyed by columnId
+}
+
+export interface WeekSchedule {
+  weekId: string; // Monday of the week, YYYY-MM-DD
+  columns: ScheduleColumn[];
+  rows: ScheduleRow[];
+  updatedAt: string;
 }
 
 export interface Company {
