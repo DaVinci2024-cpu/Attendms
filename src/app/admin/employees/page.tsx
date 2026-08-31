@@ -1,17 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import {
-  ArrowLeft,
-  CalendarDays,
-  CheckCircle2,
-  KeyRound,
-  LayoutDashboard,
-  Loader2,
-  Trash2,
-  UserPlus,
-} from "lucide-react";
+import { CheckCircle2, KeyRound, Loader2, Trash2 } from "lucide-react";
 import { RequireAdmin } from "@/components/RequireAdmin";
 import {
   deleteEmployee,
@@ -97,35 +87,6 @@ function EmployeeList() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-      <div className="flex items-center justify-between">
-        <Link
-          href="/"
-          className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
-        >
-          <ArrowLeft className="h-4 w-4" /> Back
-        </Link>
-        <div className="flex items-center gap-4">
-          <Link
-            href="/admin/dashboard"
-            className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
-          >
-            <LayoutDashboard className="h-4 w-4" /> Dashboard
-          </Link>
-          <Link
-            href="/admin/schedule"
-            className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
-          >
-            <CalendarDays className="h-4 w-4" /> Schedule
-          </Link>
-          <Link
-            href="/enroll"
-            className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
-          >
-            <UserPlus className="h-4 w-4" /> Enroll new
-          </Link>
-        </div>
-      </div>
-
       <h1 className="text-2xl font-semibold">Employees</h1>
 
       {error && <p className="text-sm text-red-400">{error}</p>}

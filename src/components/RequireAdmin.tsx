@@ -10,6 +10,7 @@ import {
 import { Loader2, LogOut, ShieldAlert } from "lucide-react";
 import { getAuthClient } from "@/lib/auth";
 import { ensureAdminBootstrap, fetchCompany } from "@/lib/firestoreRepo";
+import { AdminNav } from "@/components/AdminNav";
 
 export function RequireAdmin({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null | undefined>(undefined);
@@ -147,15 +148,18 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
 
   return (
     <div>
-      <div className="flex items-center justify-end gap-2 px-4 pt-4 text-sm text-neutral-400">
-        {user.email}
-        <button
-          type="button"
-          onClick={() => signOut(getAuthClient())}
-          className="flex items-center gap-1 hover:text-neutral-200"
-        >
-          <LogOut className="h-4 w-4" /> Sign out
-        </button>
+      <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-3 px-4 pt-4">
+        <AdminNav />
+        <div className="flex items-center gap-2 text-sm text-neutral-400">
+          {user.email}
+          <button
+            type="button"
+            onClick={() => signOut(getAuthClient())}
+            className="flex items-center gap-1 hover:text-neutral-200"
+          >
+            <LogOut className="h-4 w-4" /> Sign out
+          </button>
+        </div>
       </div>
       {children}
     </div>

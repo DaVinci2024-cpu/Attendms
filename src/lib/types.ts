@@ -91,6 +91,16 @@ export interface Company {
   adminUids?: string[];
 }
 
+// Public-readable (no login) so the kiosk screen can show it — deliberately
+// kept in its own document, separate from the main Company doc, so this
+// stays world-readable without exposing adminEmail/adminUids too.
+export interface KioskDisplaySettings {
+  headline: string; // e.g. the business name/greeting shown big on the kiosk
+  notice: string;
+  noticeActive: boolean;
+  updatedAt: string;
+}
+
 export interface Kiosk {
   kioskId: string;
   label: string;

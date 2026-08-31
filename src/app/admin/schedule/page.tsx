@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import {
-  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Loader2,
@@ -229,13 +227,6 @@ function ScheduleGrid() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-4 py-8">
-      <Link
-        href="/admin/dashboard"
-        className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
-      >
-        <ArrowLeft className="h-4 w-4" /> Dashboard
-      </Link>
-
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Schedule</h1>
         <div className="flex items-center gap-2">

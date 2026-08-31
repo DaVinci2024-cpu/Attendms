@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, CalendarDays, Loader2, Users } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { RequireAdmin } from "@/components/RequireAdmin";
 import { fetchAllAttendance, fetchAllEmployees } from "@/lib/firestoreRepo";
 import { pairSessions, formatDuration } from "@/lib/hours";
@@ -79,29 +78,6 @@ function Dashboard() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-8">
-      <div className="flex items-center justify-between">
-        <Link
-          href="/"
-          className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
-        >
-          <ArrowLeft className="h-4 w-4" /> Back
-        </Link>
-        <div className="flex items-center gap-4">
-          <Link
-            href="/admin/schedule"
-            className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
-          >
-            <CalendarDays className="h-4 w-4" /> Schedule
-          </Link>
-          <Link
-            href="/admin/employees"
-            className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
-          >
-            <Users className="h-4 w-4" /> Manage employees
-          </Link>
-        </div>
-      </div>
-
       <h1 className="text-2xl font-semibold">Attendance dashboard</h1>
 
       {error && <p className="text-sm text-red-400">{error}</p>}
@@ -179,29 +155,32 @@ function Dashboard() {
 
           <div className="overflow-x-auto rounded-xl bg-neutral-900">
             <table className="w-full text-left text-sm">
-              <thead className="text-neutral-400">
-                <tr>
-                  <th className="px-4 py-2">Employee</th>
-                  <th className="px-4 py-2">Date</th>
-                  <th className="px-4 py-2">Punch in</th>
-                  <th className="px-4 py-2">Punch out</th>
-                  <th className="px-4 py-2">Duration</th>
+              <thead>
+                <tr className="bg-neutral-800/50 text-xs uppercase tracking-wide text-neutral-400">
+                  <th className="px-4 py-2.5 font-medium">Employee</th>
+                  <th className="px-4 py-2.5 font-medium">Date</th>
+                  <th className="px-4 py-2.5 font-medium">Punch in</th>
+                  <th className="px-4 py-2.5 font-medium">Punch out</th>
+                  <th className="px-4 py-2.5 font-medium">Duration</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredSessions.map((s) => (
-                  <tr key={s.punchIn.logId} className="border-t border-neutral-800">
-                    <td className="px-4 py-2">{s.employeeName}</td>
-                    <td className="px-4 py-2">{localDate(s.punchIn.timestamp)}</td>
-                    <td className="px-4 py-2">{localTime(s.punchIn.timestamp)}</td>
-                    <td className="px-4 py-2">
+                  <tr
+                    key={s.punchIn.logId}
+                    className="border-t border-neutral-800 transition hover:bg-neutral-800/40"
+                  >
+                    <td className="px-4 py-2.5">{s.employeeName}</td>
+                    <td className="px-4 py-2.5">{localDate(s.punchIn.timestamp)}</td>
+                    <td className="px-4 py-2.5">{localTime(s.punchIn.timestamp)}</td>
+                    <td className="px-4 py-2.5">
                       {s.punchOut ? (
                         localTime(s.punchOut.timestamp)
                       ) : (
                         <span className="text-emerald-400">still in</span>
                       )}
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-4 py-2.5">
                       {s.durationMs !== null ? formatDuration(s.durationMs) : "—"}
                     </td>
                   </tr>

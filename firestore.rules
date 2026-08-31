@@ -80,6 +80,14 @@ service cloud.firestore {
         allow read: if request.auth != null;
         allow write: if isAdmin();
       }
+
+      // The kiosk screen's headline/notice text — kept out of the main
+      // company doc specifically so it can be world-readable (the kiosk
+      // never signs in) without also exposing adminEmail/adminUids.
+      match /settings/kioskDisplay {
+        allow read: if true;
+        allow write: if isAdmin();
+      }
     }
   }
 }

@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   LogIn,
   LogOut,
+  Megaphone,
   ShieldAlert,
   UserCheck,
   Users,
@@ -23,10 +24,12 @@ import { formatDuration } from "@/lib/hours";
 import {
   fetchAllAttendance,
   fetchAllEmployees,
+  fetchKioskDisplaySettings,
   recordPunch,
   recordSuspiciousEvent,
 } from "@/lib/firestoreRepo";
 import {
+  COMPANY_NAME,
   KIOSK_ID,
   DETECTION_INTERVAL_MS,
   MAX_PIN_ATTEMPTS,
@@ -51,6 +54,8 @@ export default function Home() {
   const [online, setOnline] = useState(
     () => typeof navigator === "undefined" || navigator.onLine
   );
+  const [headline, setHeadline] = useState(`Welcome to ${COMPANY_NAME}`);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const [status, setStatus] = useState<KioskStatus>("idle");
   const [intent, setIntent] = useState<PunchType | null>(null);
@@ -87,13 +92,16 @@ export default function Home() {
 
     async function loadInitialData() {
       try {
-        const [emps, logs] = await Promise.all([
+        const [emps, logs, display] = await Promise.all([
           fetchAllEmployees(),
           fetchAllAttendance(),
+          fetchKioskDisplaySettings(),
         ]);
         if (cancelled) return;
         setEmployees(emps);
         setAttendanceLogs(logs);
+        if (display?.headline) setHeadline(display.headline);
+        setNotice(display?.noticeActive && display.notice ? display.notice : null);
       } catch {
         // Firestore serves from the local IndexedDB cache when offline; a
         // failure here just means the cache is still empty (first-ever load).
@@ -242,126 +250,152 @@ export default function Home() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Attendms</h1>
+    <div className="flex min-h-screen flex-col bg-black text-white">
+      <header className="flex items-center justify-between px-5 py-5">
+        <span className="text-xs font-semibold uppercase tracking-widest text-neutral-600">
+          Attendms
+        </span>
         {!online && (
           <span className="flex items-center gap-1 rounded-full bg-amber-900/50 px-3 py-1 text-xs text-amber-300">
             <WifiOff className="h-3 w-3" /> Offline — punches queue locally
           </span>
         )}
-      </div>
+      </header>
 
-      {status === "idle" && (
-        <div className="flex flex-col gap-3">
-          <button
-            type="button"
-            onClick={() => startPunch("punch_in")}
-            className="flex items-center justify-center gap-3 rounded-xl bg-emerald-700 px-6 py-8 text-xl font-semibold text-white transition hover:bg-emerald-600"
-          >
-            <LogIn className="h-8 w-8" /> Punch In
-          </button>
-          <button
-            type="button"
-            onClick={() => startPunch("punch_out")}
-            className="flex items-center justify-center gap-3 rounded-xl bg-blue-700 px-6 py-8 text-xl font-semibold text-white transition hover:bg-blue-600"
-          >
-            <LogOut className="h-8 w-8" /> Punch Out
-          </button>
-        </div>
-      )}
+      <main className="flex flex-1 flex-col items-center justify-center gap-5 px-4 pb-10">
+        <h1 className="max-w-md text-balance text-center text-3xl font-bold tracking-tight">
+          {headline}
+        </h1>
 
-      {status !== "idle" && (
-        <>
-          <CameraView ref={videoRef} ready={cameraReady} error={cameraError} />
+        {notice && (
+          <div className="flex w-full max-w-md items-start gap-2 rounded-xl border border-amber-800/50 bg-amber-950/40 px-4 py-3 text-sm text-amber-200">
+            <Megaphone className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>{notice}</p>
+          </div>
+        )}
 
-          {modelsError && (
-            <p className="text-sm text-red-400">
-              Failed to load face recognition models: {modelsError}
-            </p>
-          )}
-          {!modelsLoaded && !modelsError && (
-            <p className="text-sm text-neutral-400">Loading face recognition models...</p>
-          )}
-
-          {status === "scanning" && (
-            <div className="flex flex-col items-center gap-2">
-              <p className="text-center text-sm text-neutral-400">
-                Looking for a face to {intent === "punch_in" ? "punch in" : "punch out"}...
-              </p>
+        <div className="w-full max-w-md rounded-2xl border border-neutral-800 bg-neutral-950/60 p-6 shadow-2xl shadow-black/40">
+          {status === "idle" && (
+            <div className="flex flex-col gap-4">
               <button
                 type="button"
-                onClick={backToIdle}
-                className="text-sm text-neutral-400 underline hover:text-neutral-200"
+                onClick={() => startPunch("punch_in")}
+                className="flex items-center gap-4 rounded-xl bg-emerald-700 px-6 py-6 text-left transition hover:bg-emerald-600 active:scale-[0.99]"
               >
-                Cancel
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/15">
+                  <LogIn className="h-6 w-6" />
+                </span>
+                <span className="text-xl font-semibold">Punch In</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => startPunch("punch_out")}
+                className="flex items-center gap-4 rounded-xl bg-blue-700 px-6 py-6 text-left transition hover:bg-blue-600 active:scale-[0.99]"
+              >
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/15">
+                  <LogOut className="h-6 w-6" />
+                </span>
+                <span className="text-xl font-semibold">Punch Out</span>
               </button>
             </div>
           )}
 
-          {status === "pin_entry" && candidate && (
-            <div className="flex flex-col items-center gap-4 rounded-xl bg-neutral-900 p-6">
-              <div className="flex items-center gap-2 text-lg font-medium">
-                <UserCheck className="h-5 w-5 text-blue-400" />
-                Hi {candidate.employee.fullName}, enter your PIN
-              </div>
-              <PinPad
-                value={pin}
-                onChange={setPin}
-                onSubmit={handlePinSubmit}
-                disabled={verifyingPin}
-              />
-              {pinError && <p className="text-sm text-red-400">{pinError}</p>}
-              <button
-                type="button"
-                onClick={backToIdle}
-                className="text-sm text-neutral-400 hover:text-neutral-200"
-              >
-                Not you? Cancel
-              </button>
-            </div>
-          )}
+          {status !== "idle" && (
+            <div className="flex flex-col gap-4">
+              <CameraView ref={videoRef} ready={cameraReady} error={cameraError} />
 
-          {status === "success" && successInfo && (
-            <div className="flex flex-col items-center gap-2 rounded-xl bg-emerald-900/40 p-6 text-center">
-              <UserCheck className="h-10 w-10 text-emerald-400" />
-              <p className="text-lg font-medium">
-                {successInfo.employeeName} —{" "}
-                {successInfo.punchType === "punch_in" ? "Punched in" : "Punched out"}
-              </p>
-              {successInfo.durationLabel && (
-                <p className="text-sm text-emerald-300">
-                  Worked {successInfo.durationLabel} this shift
+              {modelsError && (
+                <p className="text-sm text-red-400">
+                  Failed to load face recognition models: {modelsError}
                 </p>
+              )}
+              {!modelsLoaded && !modelsError && (
+                <p className="text-sm text-neutral-400">
+                  Loading face recognition models...
+                </p>
+              )}
+
+              {status === "scanning" && (
+                <div className="flex flex-col items-center gap-2">
+                  <p className="text-center text-sm text-neutral-400">
+                    Looking for a face to{" "}
+                    {intent === "punch_in" ? "punch in" : "punch out"}...
+                  </p>
+                  <button
+                    type="button"
+                    onClick={backToIdle}
+                    className="text-sm text-neutral-400 underline hover:text-neutral-200"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              {status === "pin_entry" && candidate && (
+                <div className="flex flex-col items-center gap-4">
+                  <div className="flex items-center gap-2 text-lg font-medium">
+                    <UserCheck className="h-5 w-5 text-blue-400" />
+                    Hi {candidate.employee.fullName}, enter your PIN
+                  </div>
+                  <PinPad
+                    value={pin}
+                    onChange={setPin}
+                    onSubmit={handlePinSubmit}
+                    disabled={verifyingPin}
+                  />
+                  {pinError && <p className="text-sm text-red-400">{pinError}</p>}
+                  <button
+                    type="button"
+                    onClick={backToIdle}
+                    className="text-sm text-neutral-400 hover:text-neutral-200"
+                  >
+                    Not you? Cancel
+                  </button>
+                </div>
+              )}
+
+              {status === "success" && successInfo && (
+                <div className="flex flex-col items-center gap-2 rounded-xl bg-emerald-900/40 p-6 text-center">
+                  <UserCheck className="h-10 w-10 text-emerald-400" />
+                  <p className="text-lg font-medium">
+                    {successInfo.employeeName} —{" "}
+                    {successInfo.punchType === "punch_in" ? "Punched in" : "Punched out"}
+                  </p>
+                  {successInfo.durationLabel && (
+                    <p className="text-sm text-emerald-300">
+                      Worked {successInfo.durationLabel} this shift
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {status === "suspicious" && (
+                <div className="flex flex-col items-center gap-2 rounded-xl bg-red-900/40 p-6 text-center">
+                  <ShieldAlert className="h-10 w-10 text-red-400" />
+                  <p className="text-lg font-medium">
+                    Too many incorrect PIN attempts. This has been logged.
+                  </p>
+                </div>
               )}
             </div>
           )}
+        </div>
+      </main>
 
-          {status === "suspicious" && (
-            <div className="flex flex-col items-center gap-2 rounded-xl bg-red-900/40 p-6 text-center">
-              <ShieldAlert className="h-10 w-10 text-red-400" />
-              <p className="text-lg font-medium">
-                Too many incorrect PIN attempts. This has been logged.
-              </p>
-            </div>
-          )}
-        </>
-      )}
-
-      <div className="mt-auto flex items-center justify-center gap-6 border-t border-neutral-900 pt-4">
+      <footer className="flex items-center justify-center gap-3 px-4 pb-6">
         <Link
           href="/portal/login"
-          className="flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-300"
+          className="flex items-center gap-1.5 rounded-full border border-neutral-800 px-4 py-2 text-xs text-neutral-500 transition hover:border-neutral-700 hover:text-neutral-300"
         >
           <Users className="h-3.5 w-3.5" /> Employee portal
         </Link>
         <Link
-          href="/admin/dashboard"
-          className="flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-300"
+          href="/admin"
+          className="flex items-center gap-1.5 rounded-full border border-neutral-800 px-4 py-2 text-xs text-neutral-500 transition hover:border-neutral-700 hover:text-neutral-300"
         >
           <LayoutDashboard className="h-3.5 w-3.5" /> Admin portal
         </Link>
-      </div>
+      </footer>
     </div>
   );
 }

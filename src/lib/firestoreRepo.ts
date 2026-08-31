@@ -20,6 +20,7 @@ import type {
   SuspiciousEvent,
   Company,
   WeekSchedule,
+  KioskDisplaySettings,
 } from "./types";
 
 function companyDoc() {
@@ -40,6 +41,10 @@ function suspiciousEventsCol(): CollectionReference {
 
 function scheduleDoc(weekId: string) {
   return doc(getDb(), "companies", COMPANY_ID, "schedules", weekId);
+}
+
+function kioskDisplayDoc() {
+  return doc(getDb(), "companies", COMPANY_ID, "settings", "kioskDisplay");
 }
 
 // Called once the admin is signed in (rules require auth to write the
@@ -169,4 +174,15 @@ export async function fetchWeekSchedule(
 
 export async function saveWeekSchedule(schedule: WeekSchedule): Promise<void> {
   await setDoc(scheduleDoc(schedule.weekId), schedule);
+}
+
+export async function fetchKioskDisplaySettings(): Promise<KioskDisplaySettings | null> {
+  const snapshot = await getDoc(kioskDisplayDoc());
+  return snapshot.exists() ? (snapshot.data() as KioskDisplaySettings) : null;
+}
+
+export async function saveKioskDisplaySettings(
+  settings: KioskDisplaySettings
+): Promise<void> {
+  await setDoc(kioskDisplayDoc(), settings);
 }
