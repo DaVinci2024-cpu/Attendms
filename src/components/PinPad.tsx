@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { Delete } from "lucide-react";
 
 interface PinPadProps {
@@ -33,6 +34,32 @@ export function PinPad({
       onChange(value + key);
     }
   }
+
+  // Lets a physical/hardware keyboard drive PIN entry too, not just taps —
+  // digits, Backspace to delete, Enter to submit, Escape to clear.
+  useEffect(() => {
+    if (disabled) return;
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key >= "0" && e.key <= "9") {
+        e.preventDefault();
+        press(e.key);
+      } else if (e.key === "Backspace") {
+        e.preventDefault();
+        press("del");
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        press("clear");
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        if (value.length >= 4) onSubmit();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disabled, value, maxLength]);
 
   return (
     <div className="flex flex-col items-center gap-4">
