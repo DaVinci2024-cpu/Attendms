@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Trash2, UserPlus } from "lucide-react";
+import { ArrowLeft, LayoutDashboard, Loader2, Trash2, UserPlus } from "lucide-react";
 import { RequireAdmin } from "@/components/RequireAdmin";
 import { deleteEmployee, fetchAllEmployees } from "@/lib/firestoreRepo";
 import type { Employee } from "@/lib/types";
@@ -64,12 +64,20 @@ function EmployeeList() {
         >
           <ArrowLeft className="h-4 w-4" /> Back
         </Link>
-        <Link
-          href="/enroll"
-          className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
-        >
-          <UserPlus className="h-4 w-4" /> Enroll new
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/admin/dashboard"
+            className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
+          >
+            <LayoutDashboard className="h-4 w-4" /> Dashboard
+          </Link>
+          <Link
+            href="/enroll"
+            className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
+          >
+            <UserPlus className="h-4 w-4" /> Enroll new
+          </Link>
+        </div>
       </div>
 
       <h1 className="text-2xl font-semibold">Employees</h1>

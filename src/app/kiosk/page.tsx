@@ -12,6 +12,7 @@ import { findBestMatch, type MatchResult } from "@/lib/faceMatching";
 import { nextPunchType } from "@/lib/punchLogic";
 import { playChime } from "@/lib/chime";
 import { verifyPin } from "@/lib/pin";
+import { formatDuration } from "@/lib/hours";
 import {
   fetchAllAttendance,
   fetchAllEmployees,
@@ -31,6 +32,7 @@ type KioskStatus = "scanning" | "pin_entry" | "success" | "suspicious";
 interface SuccessInfo {
   employeeName: string;
   punchType: PunchType;
+  durationLabel?: string;
 }
 
 export default function KioskPage() {
@@ -184,6 +186,19 @@ export default function KioskPage() {
     }
 
     const punchType = nextPunchType(employee.employeeId, attendanceLogs);
+
+    // On punch-out, find the matching punch-in for this shift (the most
+    // recent prior log for this employee) to show how long they worked.
+    let durationLabel: string | undefined;
+    if (punchType === "punch_out") {
+      const [lastLog] = attendanceLogs
+        .filter((l) => l.employeeId === employee.employeeId)
+        .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      if (lastLog?.type === "punch_in") {
+        durationLabel = formatDuration(Date.now() - new Date(lastLog.timestamp).getTime());
+      }
+    }
+
     const log: AttendanceLog = {
       logId: `log_${crypto.randomUUID()}`,
       employeeId: employee.employeeId,
@@ -201,7 +216,7 @@ export default function KioskPage() {
 
     debounceUntilRef.current.set(employee.employeeId, Date.now() + PUNCH_DEBOUNCE_MS);
     playChime("success");
-    setSuccessInfo({ employeeName: employee.fullName, punchType });
+    setSuccessInfo({ employeeName: employee.fullName, punchType, durationLabel });
     setStatus("success");
     setCandidate(null);
     setPin("");
@@ -283,6 +298,11 @@ export default function KioskPage() {
             {successInfo.employeeName} —{" "}
             {successInfo.punchType === "punch_in" ? "Punched in" : "Punched out"}
           </p>
+          {successInfo.durationLabel && (
+            <p className="text-sm text-emerald-300">
+              Worked {successInfo.durationLabel} this shift
+            </p>
+          )}
         </div>
       )}
 

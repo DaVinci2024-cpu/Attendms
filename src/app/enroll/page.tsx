@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Camera, CheckCircle2, Loader2, Users } from "lucide-react";
+import {
+  ArrowLeft,
+  Camera,
+  CheckCircle2,
+  LayoutDashboard,
+  Loader2,
+  Users,
+} from "lucide-react";
 import { CameraView } from "@/components/CameraView";
 import { RequireAdmin } from "@/components/RequireAdmin";
 import { useCamera } from "@/hooks/useCamera";
@@ -119,12 +126,20 @@ function EnrollForm() {
         >
           <ArrowLeft className="h-4 w-4" /> Back
         </Link>
-        <Link
-          href="/admin/employees"
-          className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
-        >
-          <Users className="h-4 w-4" /> Manage employees
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/admin/dashboard"
+            className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
+          >
+            <LayoutDashboard className="h-4 w-4" /> Dashboard
+          </Link>
+          <Link
+            href="/admin/employees"
+            className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
+          >
+            <Users className="h-4 w-4" /> Manage employees
+          </Link>
+        </div>
       </div>
 
       <div>
