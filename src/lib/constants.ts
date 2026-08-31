@@ -24,3 +24,11 @@ export const MAX_PIN_ATTEMPTS = 3;
 
 // How often (ms) the kiosk detection loop runs face detection.
 export const DETECTION_INTERVAL_MS = 700;
+
+// Employees don't have real work emails, so the portal login uses a
+// synthetic, non-deliverable email under this fake domain — Firebase Auth
+// requires an email-shaped identifier even though nothing is ever sent to
+// it. The employee-facing "username" is portalUsername, not this.
+export function portalEmail(employeeId: string): string {
+  return `${employeeId}@${COMPANY_ID}.attendms.local`;
+}

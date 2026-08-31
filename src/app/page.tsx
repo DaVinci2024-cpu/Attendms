@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { CalendarDays, LayoutDashboard, ScanFace, UserPlus, Users } from "lucide-react";
+import {
+  CalendarDays,
+  LayoutDashboard,
+  LogIn,
+  ScanFace,
+  UserPlus,
+  Users,
+} from "lucide-react";
 
 export default function Home() {
   return (
@@ -61,6 +68,19 @@ export default function Home() {
             <p className="font-medium">Enroll employee</p>
             <p className="text-sm text-neutral-400">
               Capture face snapshots, PIN, and consent
+            </p>
+          </div>
+        </Link>
+
+        <Link
+          href="/portal/login"
+          className="flex items-center gap-3 rounded-xl bg-neutral-900 p-5 transition hover:bg-neutral-800"
+        >
+          <LogIn className="h-6 w-6 text-cyan-400" />
+          <div>
+            <p className="font-medium">Employee portal</p>
+            <p className="text-sm text-neutral-400">
+              Sign in to see your own hours and schedule
             </p>
           </div>
         </Link>

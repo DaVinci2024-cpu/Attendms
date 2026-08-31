@@ -25,6 +25,13 @@ export interface Employee {
   active: boolean;
   createdAt: string;
   consent: ConsentRecord;
+  // Self-service portal login (separate from the kiosk PIN). Absent until
+  // an admin sets one up via /admin/employees.
+  portalUsername?: string;
+  authUid?: string;
+  // True after an admin creates/resets the portal account with a temporary
+  // password, until the employee sets their own on first login.
+  mustChangePassword?: boolean;
 }
 
 export type PunchType = "punch_in" | "punch_out";
@@ -79,6 +86,9 @@ export interface Company {
   companyName: string;
   adminEmail: string;
   createdAt: string;
+  // Firebase Auth UIDs recognized as admin — how Firestore rules tell an
+  // admin login apart from an employee portal login now that both exist.
+  adminUids?: string[];
 }
 
 export interface Kiosk {

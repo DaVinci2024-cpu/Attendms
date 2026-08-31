@@ -1,46 +1,84 @@
 rules_version = '2';
 
-// Single real company, single admin, no kiosk login (see README + spec
-// Section 5). Paste this whole file into Firebase console -> Firestore
-// Database -> Rules -> Publish.
+// Single real company, two kinds of signed-in user: one admin account and,
+// as of the employee portal, one Firebase Auth account per employee who's
+// been set up with a portal login. The kiosk itself never signs in at all
+// (see README + spec Section 5). Paste this whole file into Firebase
+// console -> Firestore Database -> Rules -> Publish.
 //
 // Known, accepted tradeoff: the kiosk has no login of its own, so
 // `employees` (including face descriptors) must stay world-readable for
 // the offline-matching architecture to work at all — anyone who obtains
-// this project's public web config can read every employee's descriptors.
-// Physical security of the kiosk device and restricting who gets the
-// Firebase config are the real mitigations here, not this rules file.
-// Writes to employees, and all reads/writes beyond kiosk punches, require
-// the one signed-in admin account.
+// this project's public web config can read every employee's descriptors
+// and the (hashed) PIN/portal-account fields. Physical security of the
+// kiosk device and restricting who gets the Firebase config are the real
+// mitigations here, not this rules file.
 service cloud.firestore {
   match /databases/{database}/documents {
     match /companies/{companyId} {
-      allow read, write: if request.auth != null;
+      function isAdmin() {
+        return request.auth != null
+          && exists(/databases/$(database)/documents/companies/$(companyId))
+          && request.auth.uid in
+             get(/databases/$(database)/documents/companies/$(companyId)).data.adminUids;
+      }
+
+      allow read: if request.auth != null;
+      // Bootstrapping: the very first write (creating the company doc, or
+      // adding adminUids before it has ever been set) is only reachable by
+      // whoever signs in first — which, in practice, is the one admin
+      // account created directly in the Firebase console before any
+      // employee portal account exists. Once adminUids is set, only an
+      // existing admin can change the company doc (including adminUids)
+      // further.
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && (
+        !("adminUids" in resource.data) ||
+        request.auth.uid in resource.data.adminUids
+      );
 
       match /employees/{employeeId} {
         allow read: if true;
-        allow create, update, delete: if request.auth != null;
-      }
-
-      // One document per week (weekId = that week's Monday), holding the
-      // whole spreadsheet-style grid. Admin-only for now.
-      match /schedules/{weekId} {
-        allow read, write: if request.auth != null;
+        allow create, delete: if isAdmin();
+        // An employee may flip their own mustChangePassword flag back to
+        // false after setting a real password — nothing else on their own
+        // record. Everything else (PIN, descriptors, portal setup) stays
+        // admin-only.
+        allow update: if isAdmin() || (
+          request.auth != null &&
+          resource.data.authUid == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(["mustChangePassword"])
+        );
       }
 
       // Attendance is an append-only log: the kiosk creates punches without
       // signing in, but nothing (including the admin) can edit or delete a
-      // recorded punch after the fact.
+      // recorded punch after the fact. An employee can read their own
+      // punches (matched by their linked employee doc's authUid); the
+      // admin can read everyone's.
       match /attendance/{logId} {
         allow create: if true;
-        allow read: if request.auth != null;
+        allow read: if isAdmin() || (
+          request.auth != null &&
+          get(/databases/$(database)/documents/companies/$(companyId)/employees/$(resource.data.employeeId)).data.authUid == request.auth.uid
+        );
         allow update, delete: if false;
       }
 
       match /suspiciousEvents/{eventId} {
         allow create: if true;
-        allow read: if request.auth != null;
+        allow read: if isAdmin();
         allow update, delete: if false;
+      }
+
+      // One document per week (weekId = that week's Monday), holding the
+      // whole spreadsheet-style grid. Readable by any signed-in user
+      // (admin or any employee with a portal account) the same way a
+      // printed schedule posted in a break room would be — only the admin
+      // can edit it.
+      match /schedules/{weekId} {
+        allow read: if request.auth != null;
+        allow write: if isAdmin();
       }
     }
   }

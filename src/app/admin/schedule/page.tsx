@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { RequireAdmin } from "@/components/RequireAdmin";
 import { fetchWeekSchedule, saveWeekSchedule } from "@/lib/firestoreRepo";
+import { mondayOf, toWeekId } from "@/lib/week";
 import type { ScheduleColumn, WeekSchedule } from "@/lib/types";
 
 const DAY_NAMES = [
@@ -24,19 +25,6 @@ const DAY_NAMES = [
   "Saturday",
   "Sunday",
 ];
-
-function mondayOf(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay(); // 0 = Sunday
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function toWeekId(monday: Date): string {
-  return monday.toLocaleDateString("en-CA"); // YYYY-MM-DD
-}
 
 function defaultSchedule(monday: Date): WeekSchedule {
   const rows = DAY_NAMES.map((name, i) => {
