@@ -63,6 +63,7 @@ export default function Home() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const [intent, setIntent] = useState<PunchType | null>(null);
+  const [scanHint, setScanHint] = useState<string | null>(null);
   const [candidate, setCandidate] = useState<MatchResult | null>(null);
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState<string | null>(null);
@@ -141,20 +142,35 @@ export default function Home() {
       detectingRef.current = true;
       try {
         const descriptor = await detectSingleFaceDescriptor(videoRef.current);
-        if (!descriptor) return;
+        if (!descriptor) {
+          setScanHint("No face detected — center your face in the frame.");
+          return;
+        }
 
         const match = findBestMatch(descriptor, employees);
-        if (!match) return;
+        if (!match) {
+          setScanHint(
+            employees.length === 0
+              ? "No employees are enrolled on this device yet."
+              : "Face detected, but it doesn't match an enrolled employee."
+          );
+          return;
+        }
 
         const debounceUntil =
           debounceUntilRef.current.get(match.employee.employeeId) ?? 0;
         if (Date.now() < debounceUntil) return;
 
+        setScanHint(null);
         pinAttemptsRef.current.set(match.employee.employeeId, 0);
         setCandidate(match);
         setPin("");
         setPinError(null);
         setStatus("pin_entry");
+      } catch (err) {
+        setScanHint(
+          err instanceof Error ? `Detection error: ${err.message}` : "Detection error"
+        );
       } finally {
         detectingRef.current = false;
       }
@@ -165,10 +181,12 @@ export default function Home() {
 
   function startPunch(punchType: PunchType) {
     setIntent(punchType);
+    setScanHint(null);
     setStatus("scanning");
   }
 
   function backToIdle() {
+    setScanHint(null);
     setIntent(null);
     setCandidate(null);
     setPin("");
@@ -325,6 +343,9 @@ export default function Home() {
                     Looking for a face to{" "}
                     {intent === "punch_in" ? "punch in" : "punch out"}...
                   </p>
+                  {scanHint && (
+                    <p className="text-center text-xs text-amber-400">{scanHint}</p>
+                  )}
                   <button
                     type="button"
                     onClick={backToIdle}
