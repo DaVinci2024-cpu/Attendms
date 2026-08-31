@@ -32,7 +32,7 @@ export function findBestMatch(
   for (const employee of employees) {
     if (!employee.active) continue;
     for (const descriptor of employee.faceDescriptors) {
-      const distance = euclideanDistance(liveDescriptor, descriptor);
+      const distance = euclideanDistance(liveDescriptor, descriptor.values);
       if (distance < threshold && (!best || distance < best.distance)) {
         best = { employee, distance };
       }

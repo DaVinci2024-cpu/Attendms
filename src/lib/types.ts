@@ -6,6 +6,12 @@ export interface ConsentRecord {
   recordedBy: string;
 }
 
+export interface FaceDescriptor {
+  // Firestore rejects arrays nested directly inside arrays, so each 128-d
+  // descriptor is wrapped in an object instead of being a bare number[].
+  values: number[];
+}
+
 export interface Employee {
   employeeId: string;
   fullName: string;
@@ -13,8 +19,8 @@ export interface Employee {
   // the plaintext PIN.
   pinHash: string;
   pinSalt: string;
-  // One 128-float descriptor per enrollment snapshot (1-3 typical).
-  faceDescriptors: number[][];
+  // One descriptor per enrollment snapshot (1-3 typical).
+  faceDescriptors: FaceDescriptor[];
   role: "employee" | "admin";
   active: boolean;
   createdAt: string;

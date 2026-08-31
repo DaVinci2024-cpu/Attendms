@@ -88,7 +88,7 @@ function EnrollForm() {
         fullName: fullName.trim(),
         pinHash,
         pinSalt,
-        faceDescriptors: descriptors,
+        faceDescriptors: descriptors.map((values) => ({ values })),
         role,
         active: true,
         createdAt: now,
