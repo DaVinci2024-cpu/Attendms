@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, LayoutDashboard, Loader2, Trash2, UserPlus } from "lucide-react";
+import {
+  ArrowLeft,
+  CalendarDays,
+  LayoutDashboard,
+  Loader2,
+  Trash2,
+  UserPlus,
+} from "lucide-react";
 import { RequireAdmin } from "@/components/RequireAdmin";
 import { deleteEmployee, fetchAllEmployees } from "@/lib/firestoreRepo";
 import type { Employee } from "@/lib/types";
@@ -110,19 +117,27 @@ function EmployeeList() {
                 {!employee.active && " · inactive"}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => handleDelete(employee.employeeId, employee.fullName)}
-              disabled={deletingId === employee.employeeId}
-              className="flex items-center gap-1 rounded-lg bg-red-900/50 px-3 py-2 text-sm text-red-300 hover:bg-red-900/80 disabled:opacity-50"
-            >
-              {deletingId === employee.employeeId ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="h-4 w-4" />
-              )}
-              Delete
-            </button>
+            <div className="flex items-center gap-2">
+              <Link
+                href={`/admin/employees/${employee.employeeId}`}
+                className="flex items-center gap-1 rounded-lg bg-neutral-800 px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-700"
+              >
+                <CalendarDays className="h-4 w-4" /> Schedule
+              </Link>
+              <button
+                type="button"
+                onClick={() => handleDelete(employee.employeeId, employee.fullName)}
+                disabled={deletingId === employee.employeeId}
+                className="flex items-center gap-1 rounded-lg bg-red-900/50 px-3 py-2 text-sm text-red-300 hover:bg-red-900/80 disabled:opacity-50"
+              >
+                {deletingId === employee.employeeId ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
+                Delete
+              </button>
+            </div>
           </li>
         ))}
       </ul>

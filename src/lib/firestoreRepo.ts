@@ -3,12 +3,19 @@ import {
   doc,
   setDoc,
   deleteDoc,
+  getDoc,
   getDocs,
   type CollectionReference,
 } from "firebase/firestore";
 import { getDb } from "./firebase";
 import { COMPANY_ID, COMPANY_NAME, ADMIN_EMAIL } from "./constants";
-import type { Employee, AttendanceLog, SuspiciousEvent, Company } from "./types";
+import type {
+  Employee,
+  AttendanceLog,
+  SuspiciousEvent,
+  Company,
+  Shift,
+} from "./types";
 
 function companyDoc() {
   return doc(getDb(), "companies", COMPANY_ID);
@@ -24,6 +31,17 @@ function attendanceCol(): CollectionReference {
 
 function suspiciousEventsCol(): CollectionReference {
   return collection(getDb(), "companies", COMPANY_ID, "suspiciousEvents");
+}
+
+function shiftsCol(employeeId: string): CollectionReference {
+  return collection(
+    getDb(),
+    "companies",
+    COMPANY_ID,
+    "employees",
+    employeeId,
+    "shifts"
+  );
 }
 
 // Called once the admin is signed in (rules require auth to write the
@@ -46,6 +64,13 @@ export async function createEmployee(employee: Employee): Promise<void> {
 export async function fetchAllEmployees(): Promise<Employee[]> {
   const snapshot = await getDocs(employeesCol());
   return snapshot.docs.map((d) => d.data() as Employee);
+}
+
+export async function fetchEmployee(
+  employeeId: string
+): Promise<Employee | null> {
+  const snapshot = await getDoc(doc(employeesCol(), employeeId));
+  return snapshot.exists() ? (snapshot.data() as Employee) : null;
 }
 
 // Employee-initiated deletion path (spec Section 5): removes the
@@ -74,4 +99,22 @@ export async function recordSuspiciousEvent(
   event: SuspiciousEvent
 ): Promise<void> {
   await setDoc(doc(suspiciousEventsCol(), event.eventId), event);
+}
+
+export async function createShift(shift: Shift): Promise<void> {
+  await setDoc(doc(shiftsCol(shift.employeeId), shift.shiftId), shift);
+}
+
+export async function fetchShiftsForEmployee(
+  employeeId: string
+): Promise<Shift[]> {
+  const snapshot = await getDocs(shiftsCol(employeeId));
+  return snapshot.docs.map((d) => d.data() as Shift);
+}
+
+export async function deleteShift(
+  employeeId: string,
+  shiftId: string
+): Promise<void> {
+  await deleteDoc(doc(shiftsCol(employeeId), shiftId));
 }

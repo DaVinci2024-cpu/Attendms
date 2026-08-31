@@ -51,6 +51,16 @@ export interface SuspiciousEvent {
   kioskId: string;
 }
 
+export interface Shift {
+  shiftId: string;
+  employeeId: string;
+  date: string; // YYYY-MM-DD, local calendar date of the shift
+  startTime: string; // HH:mm, 24h
+  endTime: string; // HH:mm, 24h
+  notes: string;
+  createdAt: string;
+}
+
 export interface Company {
   companyId: string;
   companyName: string;
