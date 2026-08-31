@@ -28,7 +28,10 @@ export const DETECTION_INTERVAL_MS = 700;
 // Employees don't have real work emails, so the portal login uses a
 // synthetic, non-deliverable email under this fake domain — Firebase Auth
 // requires an email-shaped identifier even though nothing is ever sent to
-// it. The employee-facing "username" is portalUsername, not this.
+// it. The employee-facing "username" is portalUsername, not this. Deliberately
+// doesn't include COMPANY_ID (admin-editable free text) in the domain part —
+// characters like underscores are invalid there and would make Firebase
+// reject the address outright; employeeId alone is already unique.
 export function portalEmail(employeeId: string): string {
-  return `${employeeId}@${COMPANY_ID}.attendms.local`;
+  return `${employeeId}@attendms.local`;
 }
