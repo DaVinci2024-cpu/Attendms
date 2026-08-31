@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { RegisterServiceWorker } from "@/components/RegisterServiceWorker";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -16,6 +17,7 @@ export const metadata: Metadata = {
   title: "Attendms — Biometric Attendance Kiosk",
   description:
     "Offline-capable face + PIN attendance kiosk prototype (single-tenant demo).",
+  manifest: "/manifest.json",
 };
 
 export default function RootLayout({
@@ -28,7 +30,10 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <RegisterServiceWorker />
+        {children}
+      </body>
     </html>
   );
 }

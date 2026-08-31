@@ -223,7 +223,10 @@ export default function Home() {
       pinAttemptsRef.current.set(employee.employeeId, attempts);
 
       if (attempts >= MAX_PIN_ATTEMPTS) {
-        await recordSuspiciousEvent({
+        // Fire-and-forget: Firestore queues this locally and syncs once
+        // online regardless, so the kiosk shouldn't sit waiting on a
+        // network round trip before reacting to a suspicious event.
+        recordSuspiciousEvent({
           eventId: `evt_${crypto.randomUUID()}`,
           employeeId: employee.employeeId,
           employeeName: employee.fullName,
@@ -231,6 +234,9 @@ export default function Home() {
           reason: "wrong_pin",
           attempts,
           kioskId: KIOSK_ID,
+        }).catch(() => {
+          // Local queueing itself effectively never fails; a rejection here
+          // would mean something structural (e.g. rules), not connectivity.
         });
         playChime("error");
         setStatus("suspicious");
@@ -270,7 +276,12 @@ export default function Home() {
       syncedOffline: !online,
     };
 
-    await recordPunch(log);
+    // Same reasoning as above: don't block the success screen on a network
+    // round trip. The write is queued locally by Firestore's persistence
+    // layer and synced automatically once back online — the kiosk's own
+    // local state (attendanceLogs) is updated immediately either way, so
+    // punch-direction lookups for the next person stay correct offline too.
+    recordPunch(log).catch(() => {});
     setAttendanceLogs((prev) => [...prev, log]);
 
     debounceUntilRef.current.set(employee.employeeId, Date.now() + PUNCH_DEBOUNCE_MS);
