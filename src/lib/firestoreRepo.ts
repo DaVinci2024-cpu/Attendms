@@ -128,10 +128,11 @@ export async function deleteEmployee(employeeId: string): Promise<void> {
 }
 
 // Every attendance record is fetched (served from the local IndexedDB cache
-// when offline) and filtered/sorted client-side in lib/punchLogic.ts, rather
-// than via a `where` + `orderBy` composite query — this keeps punch-direction
-// decisions working correctly on a kiosk that has never had a network
-// connection since its last cache clear, with no Firestore index requirement.
+// when offline) rather than via a `where` + `orderBy` composite query — the
+// kiosk uses this to look up an employee's last punch-in for the worked-hours
+// display on punch-out, and the admin dashboard pairs it all into sessions
+// (src/lib/hours.ts). Works with no Firestore index requirement even on a
+// kiosk that has never had a network connection since its last cache clear.
 export async function fetchAllAttendance(): Promise<AttendanceLog[]> {
   const snapshot = await getDocs(attendanceCol());
   return snapshot.docs.map((d) => d.data() as AttendanceLog);
