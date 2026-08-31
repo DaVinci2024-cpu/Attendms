@@ -22,7 +22,6 @@ import { playChime } from "@/lib/chime";
 import { verifyPin } from "@/lib/pin";
 import { formatDuration } from "@/lib/hours";
 import {
-  fetchAllAttendance,
   fetchAllEmployees,
   fetchKioskDisplaySettings,
   recordPunch,
@@ -55,6 +54,14 @@ export default function Home() {
   const { loaded: modelsLoaded, error: modelsError } = useFaceModels();
 
   const [employees, setEmployees] = useState<Employee[]>([]);
+  // Deliberately local/session-only, not fetched from Firestore: the
+  // `attendance` collection requires a signed-in reader (admin, or an
+  // employee reading their own history via the portal) so employees can't
+  // see each other's punch history there — the kiosk itself never signs
+  // in, so it can't read attendance either. This only ever grows from
+  // punches this kiosk records itself, which is enough for the
+  // worked-hours display on punch-out; it doesn't need to be a complete
+  // history of that employee's attendance.
   const [attendanceLogs, setAttendanceLogs] = useState<AttendanceLog[]>([]);
   const [online, setOnline] = useState(
     () => typeof navigator === "undefined" || navigator.onLine
@@ -81,12 +88,8 @@ export default function Home() {
 
   const refreshData = useCallback(async () => {
     try {
-      const [emps, logs] = await Promise.all([
-        fetchAllEmployees(),
-        fetchAllAttendance(),
-      ]);
+      const emps = await fetchAllEmployees();
       setEmployees(emps);
-      setAttendanceLogs(logs);
       setLoadError(null);
     } catch (err) {
       // Firestore serves from the local IndexedDB cache when offline, so a
@@ -105,14 +108,12 @@ export default function Home() {
 
     async function loadInitialData() {
       try {
-        const [emps, logs, display] = await Promise.all([
+        const [emps, display] = await Promise.all([
           fetchAllEmployees(),
-          fetchAllAttendance(),
           fetchKioskDisplaySettings(),
         ]);
         if (cancelled) return;
         setEmployees(emps);
-        setAttendanceLogs(logs);
         setLoadError(null);
         if (display?.headline) setHeadline(display.headline);
         setNotice(display?.noticeActive && display.notice ? display.notice : null);
