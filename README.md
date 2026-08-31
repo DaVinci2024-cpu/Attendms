@@ -147,9 +147,12 @@ jurisdiction.
 - `src/lib/pin.ts` — PBKDF2 PIN hashing/verification.
 - `src/lib/faceApi.ts` — loads face-api models and runs detection.
 - `src/lib/faceMatching.ts` — Euclidean distance + best-match selection.
-- `src/lib/punchLogic.ts` — derives punch_in/punch_out from local cache.
-- `src/components/RequireAdmin.tsx` — gates `/enroll` and
-  `/admin/employees` behind Firebase Auth sign-in.
+- `src/lib/hours.ts` — pairs punch_in/punch_out into sessions with
+  computed duration.
+- `src/components/RequireAdmin.tsx` — gates every `/admin/*` page (and
+  `/enroll`) behind Firebase Auth sign-in + admin membership.
+- `public/sw.js` — hand-written service worker caching the app shell
+  (hashed JS/CSS bundles, face-api model files) for offline loading.
 - `firestore.rules` — the security rules to publish in the Firebase
   console.
 
@@ -162,9 +165,6 @@ jurisdiction.
   relies on the Firestore rules above. A stolen/rooted tablet is a full
   dump of your employees' face descriptors — see the tradeoff note in
   `firestore.rules`. Physical security of the tablet matters.
-- **No PWA manifest / service worker yet** — the "install to home screen"
-  and full offline-first packaging described in spec Phase 2 isn't built.
-  Today's offline story is just Firestore's own IndexedDB persistence.
 - **No active liveness detection** — PIN is the only defense against a
   photo held up to the camera. A head-turn challenge-response check is
   planned but not yet built.
