@@ -8,25 +8,67 @@ import {
   LayoutDashboard,
   ScanFace,
   Settings,
+  ShieldCheck,
   UserPlus,
   Users,
 } from "lucide-react";
+import { usePermissions } from "@/components/RequireAdmin";
+import type { Permission } from "@/lib/types";
 
-const LINKS = [
-  { href: "/admin", label: "Home", icon: Home },
-  { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/admin/schedule", label: "Schedule", icon: CalendarDays },
-  { href: "/enroll", label: "Enroll", icon: UserPlus },
-  { href: "/admin/employees", label: "Employees", icon: Users },
-  { href: "/admin/kiosk-settings", label: "Kiosk display", icon: Settings },
+interface NavLink {
+  href: string;
+  label: string;
+  icon: typeof Home;
+  visible: (has: (p: Permission) => boolean) => boolean;
+}
+
+const LINKS: NavLink[] = [
+  { href: "/admin", label: "Home", icon: Home, visible: () => true },
+  {
+    href: "/admin/dashboard",
+    label: "Dashboard",
+    icon: LayoutDashboard,
+    visible: (has) => has("view_reports") || has("edit_attendance"),
+  },
+  {
+    href: "/admin/schedule",
+    label: "Schedule",
+    icon: CalendarDays,
+    visible: (has) => has("manage_schedule"),
+  },
+  {
+    href: "/enroll",
+    label: "Enroll",
+    icon: UserPlus,
+    visible: (has) => has("manage_employees"),
+  },
+  {
+    href: "/admin/employees",
+    label: "Employees",
+    icon: Users,
+    visible: (has) => has("manage_employees"),
+  },
+  {
+    href: "/admin/kiosk-settings",
+    label: "Kiosk display",
+    icon: Settings,
+    visible: (has) => has("manage_kiosk_settings"),
+  },
+  {
+    href: "/admin/permissions",
+    label: "Roles",
+    icon: ShieldCheck,
+    visible: (has) => has("manage_permissions"),
+  },
 ];
 
 export function AdminNav() {
   const pathname = usePathname();
+  const { has } = usePermissions();
 
   return (
     <nav className="flex flex-wrap items-center gap-1 rounded-xl bg-neutral-900 p-1.5">
-      {LINKS.map(({ href, label, icon: Icon }) => {
+      {LINKS.filter((link) => link.visible(has)).map(({ href, label, icon: Icon }) => {
         const active = pathname === href;
         return (
           <Link

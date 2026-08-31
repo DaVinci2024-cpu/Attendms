@@ -36,6 +36,18 @@ export interface Employee {
 
 export type PunchType = "punch_in" | "punch_out";
 
+// One correction made to a punch after the fact — appended, never
+// overwritten, so the full history of edits survives alongside the
+// current values.
+export interface AttendanceEdit {
+  editedBy: string; // uid of whoever made the edit
+  editedByName: string;
+  reason: string;
+  editedAt: string; // ISO
+  previousTimestamp: string;
+  previousType: PunchType;
+}
+
 export interface AttendanceLog {
   logId: string;
   employeeId: string;
@@ -46,6 +58,7 @@ export interface AttendanceLog {
   pinConfirmed: boolean;
   kioskId: string;
   syncedOffline: boolean;
+  edits?: AttendanceEdit[];
 }
 
 export interface SuspiciousEvent {
@@ -99,6 +112,27 @@ export interface KioskDisplaySettings {
   notice: string;
   noticeActive: boolean;
   updatedAt: string;
+}
+
+// The permission catalog. `adminUids` on Company remain permanent
+// superusers regardless of this — grants here are the additive layer for
+// giving someone (another admin, or an employee's own portal account) a
+// specific subset of capabilities, optionally time-limited.
+export type Permission =
+  | "manage_employees"
+  | "manage_schedule"
+  | "edit_attendance"
+  | "manage_kiosk_settings"
+  | "view_reports"
+  | "manage_permissions";
+
+export interface PermissionGrant {
+  uid: string;
+  displayName: string;
+  permissions: Permission[];
+  expiresAtMillis: number | null; // null = permanent
+  grantedBy: string;
+  grantedAt: string; // ISO, display only
 }
 
 export interface Kiosk {

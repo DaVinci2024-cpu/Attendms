@@ -1,10 +1,12 @@
 rules_version = '2';
 
-// Single real company, two kinds of signed-in user: one admin account and,
-// as of the employee portal, one Firebase Auth account per employee who's
-// been set up with a portal login. The kiosk itself never signs in at all
-// (see README + spec Section 5). Paste this whole file into Firebase
-// console -> Firestore Database -> Rules -> Publish.
+// Single real company. Three kinds of signed-in identity: the permanent
+// admin account(s) in adminUids, an employee's own portal account, and —
+// as of the Roles & Permissions feature — any account (admin or employee)
+// that's been granted specific extra capabilities via a permission grant,
+// optionally time-limited. The kiosk itself never signs in at all (see
+// README + spec Section 5). Paste this whole file into Firebase console ->
+// Firestore Database -> Rules -> Publish.
 //
 // Known, accepted tradeoff: the kiosk has no login of its own, so
 // `employees` (including face descriptors) must stay world-readable for
@@ -23,6 +25,23 @@ service cloud.firestore {
              get(/databases/$(database)/documents/companies/$(companyId)).data.adminUids;
       }
 
+      // True if the signed-in user holds `permission`, either as a
+      // permanent admin or via a non-expired grant in /permissions/{uid}.
+      // expiresAtMillis is a plain number (Date.now()-comparable), checked
+      // against request.time.toMillis() so an expired grant is actually
+      // rejected here, not just hidden in the UI.
+      function hasPermission(permission) {
+        return isAdmin() || (
+          request.auth != null &&
+          exists(/databases/$(database)/documents/companies/$(companyId)/permissions/$(request.auth.uid)) &&
+          permission in get(/databases/$(database)/documents/companies/$(companyId)/permissions/$(request.auth.uid)).data.permissions &&
+          (
+            get(/databases/$(database)/documents/companies/$(companyId)/permissions/$(request.auth.uid)).data.expiresAtMillis == null ||
+            request.time.toMillis() < get(/databases/$(database)/documents/companies/$(companyId)/permissions/$(request.auth.uid)).data.expiresAtMillis
+          )
+        );
+      }
+
       allow read: if request.auth != null;
       // Bootstrapping: the very first write (creating the company doc, or
       // adding adminUids before it has ever been set) is only reachable by
@@ -39,30 +58,40 @@ service cloud.firestore {
 
       match /employees/{employeeId} {
         allow read: if true;
-        allow create, delete: if isAdmin();
+        allow create, delete: if hasPermission("manage_employees");
         // An employee may flip their own mustChangePassword flag back to
         // false after setting a real password — nothing else on their own
-        // record. Everything else (PIN, descriptors, portal setup) stays
-        // admin-only.
-        allow update: if isAdmin() || (
+        // record. Everything else (PIN, descriptors, portal setup) needs
+        // manage_employees.
+        allow update: if hasPermission("manage_employees") || (
           request.auth != null &&
           resource.data.authUid == request.auth.uid &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(["mustChangePassword"])
         );
       }
 
-      // Attendance is an append-only log: the kiosk creates punches without
-      // signing in, but nothing (including the admin) can edit or delete a
-      // recorded punch after the fact. An employee can read their own
-      // punches (matched by their linked employee doc's authUid); the
-      // admin can read everyone's.
+      // Attendance is created by the kiosk without signing in and is
+      // otherwise append-only — a correction adds an entry to edits[]
+      // rather than silently overwriting history. An employee can read
+      // their own punches (matched by their linked employee doc's
+      // authUid); admin/edit_attendance holders can read everyone's.
       match /attendance/{logId} {
         allow create: if true;
-        allow read: if isAdmin() || (
+        allow read: if isAdmin() ||
+          hasPermission("view_reports") ||
+          hasPermission("edit_attendance") || (
           request.auth != null &&
           get(/databases/$(database)/documents/companies/$(companyId)/employees/$(resource.data.employeeId)).data.authUid == request.auth.uid
         );
-        allow update, delete: if false;
+        // A correction must be made by someone holding edit_attendance,
+        // and must append exactly one new entry to edits[] — no editing
+        // or deleting prior history, and no changing fields other than
+        // timestamp/type/edits in the same write.
+        allow update: if hasPermission("edit_attendance") &&
+          request.resource.data.edits.size() == (("edits" in resource.data) ? resource.data.edits.size() : 0) + 1 &&
+          request.resource.data.edits[request.resource.data.edits.size() - 1].editedBy == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(["timestamp", "type", "edits"]);
+        allow delete: if false;
       }
 
       match /suspiciousEvents/{eventId} {
@@ -74,11 +103,10 @@ service cloud.firestore {
       // One document per week (weekId = that week's Monday), holding the
       // whole spreadsheet-style grid. Readable by any signed-in user
       // (admin or any employee with a portal account) the same way a
-      // printed schedule posted in a break room would be — only the admin
-      // can edit it.
+      // printed schedule posted in a break room would be.
       match /schedules/{weekId} {
         allow read: if request.auth != null;
-        allow write: if isAdmin();
+        allow write: if hasPermission("manage_schedule");
       }
 
       // The kiosk screen's headline/notice text — kept out of the main
@@ -86,7 +114,15 @@ service cloud.firestore {
       // never signs in) without also exposing adminEmail/adminUids.
       match /settings/kioskDisplay {
         allow read: if true;
-        allow write: if isAdmin();
+        allow write: if hasPermission("manage_kiosk_settings");
+      }
+
+      // Permission grants. A user can read their own grant (so the UI
+      // knows what to show them); only manage_permissions holders can see
+      // or change anyone else's, or issue/revoke grants at all.
+      match /permissions/{uid} {
+        allow read: if isAdmin() || (request.auth != null && request.auth.uid == uid) || hasPermission("manage_permissions");
+        allow write: if hasPermission("manage_permissions");
       }
     }
   }

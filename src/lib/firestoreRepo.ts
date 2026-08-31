@@ -17,10 +17,12 @@ import { COMPANY_ID, COMPANY_NAME, ADMIN_EMAIL } from "./constants";
 import type {
   Employee,
   AttendanceLog,
+  AttendanceEdit,
   SuspiciousEvent,
   Company,
   WeekSchedule,
   KioskDisplaySettings,
+  PermissionGrant,
 } from "./types";
 
 function companyDoc() {
@@ -45,6 +47,10 @@ function scheduleDoc(weekId: string) {
 
 function kioskDisplayDoc() {
   return doc(getDb(), "companies", COMPANY_ID, "settings", "kioskDisplay");
+}
+
+function permissionsCol(): CollectionReference {
+  return collection(getDb(), "companies", COMPANY_ID, "permissions");
 }
 
 // Called once the admin is signed in (rules require auth to write the
@@ -185,4 +191,49 @@ export async function saveKioskDisplaySettings(
   settings: KioskDisplaySettings
 ): Promise<void> {
   await setDoc(kioskDisplayDoc(), settings);
+}
+
+export async function fetchAllPermissionGrants(): Promise<PermissionGrant[]> {
+  const snapshot = await getDocs(permissionsCol());
+  return snapshot.docs.map((d) => d.data() as PermissionGrant);
+}
+
+export async function fetchPermissionGrant(
+  uid: string
+): Promise<PermissionGrant | null> {
+  const snapshot = await getDoc(doc(permissionsCol(), uid));
+  return snapshot.exists() ? (snapshot.data() as PermissionGrant) : null;
+}
+
+export async function savePermissionGrant(grant: PermissionGrant): Promise<void> {
+  await setDoc(doc(permissionsCol(), grant.uid), grant);
+}
+
+export async function revokePermissionGrant(uid: string): Promise<void> {
+  await deleteDoc(doc(permissionsCol(), uid));
+}
+
+// Appends one audit entry and applies the correction — never overwrites a
+// prior edit's record, only ever adds to the history.
+export async function editAttendanceLog(
+  log: AttendanceLog,
+  newTimestamp: string,
+  newType: AttendanceLog["type"],
+  reason: string,
+  editedBy: string,
+  editedByName: string
+): Promise<void> {
+  const edit: AttendanceEdit = {
+    editedBy,
+    editedByName,
+    reason,
+    editedAt: new Date().toISOString(),
+    previousTimestamp: log.timestamp,
+    previousType: log.type,
+  };
+  await updateDoc(doc(attendanceCol(), log.logId), {
+    timestamp: newTimestamp,
+    type: newType,
+    edits: arrayUnion(edit),
+  });
 }

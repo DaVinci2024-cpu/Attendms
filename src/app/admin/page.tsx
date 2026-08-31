@@ -5,23 +5,34 @@ import {
   CalendarDays,
   LayoutDashboard,
   Settings,
+  ShieldCheck,
   UserPlus,
   Users,
 } from "lucide-react";
-import { RequireAdmin } from "@/components/RequireAdmin";
+import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
 
 export default function AdminHomePage() {
   return (
     <RequireAdmin>
-      <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-        <div>
-          <h1 className="text-2xl font-semibold">Admin</h1>
-          <p className="text-sm text-neutral-400">
-            Everything for running this company&apos;s attendance system.
-          </p>
-        </div>
+      <AdminHub />
+    </RequireAdmin>
+  );
+}
 
-        <div className="grid gap-4 sm:grid-cols-2">
+function AdminHub() {
+  const { has } = usePermissions();
+
+  return (
+    <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
+      <div>
+        <h1 className="text-2xl font-semibold">Admin</h1>
+        <p className="text-sm text-neutral-400">
+          Everything for running this company&apos;s attendance system.
+        </p>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        {(has("view_reports") || has("edit_attendance")) && (
           <Link
             href="/admin/dashboard"
             className="flex items-center gap-3 rounded-xl bg-neutral-900 p-5 transition hover:bg-neutral-800"
@@ -34,7 +45,9 @@ export default function AdminHomePage() {
               </p>
             </div>
           </Link>
+        )}
 
+        {has("manage_schedule") && (
           <Link
             href="/admin/schedule"
             className="flex items-center gap-3 rounded-xl bg-neutral-900 p-5 transition hover:bg-neutral-800"
@@ -47,7 +60,9 @@ export default function AdminHomePage() {
               </p>
             </div>
           </Link>
+        )}
 
+        {has("manage_employees") && (
           <Link
             href="/enroll"
             className="flex items-center gap-3 rounded-xl bg-neutral-900 p-5 transition hover:bg-neutral-800"
@@ -60,7 +75,9 @@ export default function AdminHomePage() {
               </p>
             </div>
           </Link>
+        )}
 
+        {has("manage_employees") && (
           <Link
             href="/admin/employees"
             className="flex items-center gap-3 rounded-xl bg-neutral-900 p-5 transition hover:bg-neutral-800"
@@ -73,10 +90,12 @@ export default function AdminHomePage() {
               </p>
             </div>
           </Link>
+        )}
 
+        {has("manage_kiosk_settings") && (
           <Link
             href="/admin/kiosk-settings"
-            className="flex items-center gap-3 rounded-xl bg-neutral-900 p-5 transition hover:bg-neutral-800 sm:col-span-2"
+            className="flex items-center gap-3 rounded-xl bg-neutral-900 p-5 transition hover:bg-neutral-800"
           >
             <Settings className="h-6 w-6 text-cyan-400" />
             <div>
@@ -86,8 +105,24 @@ export default function AdminHomePage() {
               </p>
             </div>
           </Link>
-        </div>
+        )}
+
+        {has("manage_permissions") && (
+          <Link
+            href="/admin/permissions"
+            className="flex items-center gap-3 rounded-xl bg-neutral-900 p-5 transition hover:bg-neutral-800"
+          >
+            <ShieldCheck className="h-6 w-6 text-rose-400" />
+            <div>
+              <p className="font-medium">Roles & permissions</p>
+              <p className="text-sm text-neutral-400">
+                Grant admins/employees specific capabilities, with optional
+                time limits
+              </p>
+            </div>
+          </Link>
+        )}
       </div>
-    </RequireAdmin>
+    </div>
   );
 }

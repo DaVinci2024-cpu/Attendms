@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
-import { RequireAdmin } from "@/components/RequireAdmin";
-import { fetchAllAttendance, fetchAllEmployees } from "@/lib/firestoreRepo";
+import { History, Loader2, Pencil, X } from "lucide-react";
+import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
+import {
+  editAttendanceLog,
+  fetchAllAttendance,
+  fetchAllEmployees,
+} from "@/lib/firestoreRepo";
 import { pairSessions, formatDuration } from "@/lib/hours";
 import type { AttendanceLog, Employee } from "@/lib/types";
 
@@ -23,11 +27,23 @@ function localTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function toDatetimeLocalValue(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours()
+  )}:${pad(d.getMinutes())}`;
+}
+
 function Dashboard() {
+  const { has, uid, email } = usePermissions();
+  const canEdit = has("edit_attendance");
+
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [logs, setLogs] = useState<AttendanceLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editingLog, setEditingLog] = useState<AttendanceLog | null>(null);
 
   const [employeeFilter, setEmployeeFilter] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -53,6 +69,11 @@ function Dashboard() {
       cancelled = true;
     };
   }, []);
+
+  function handleLogUpdated(updated: AttendanceLog) {
+    setLogs((prev) => prev.map((l) => (l.logId === updated.logId ? updated : l)));
+    setEditingLog(null);
+  }
 
   const allSessions = useMemo(() => pairSessions(logs), [logs]);
 
@@ -172,10 +193,20 @@ function Dashboard() {
                   >
                     <td className="px-4 py-2.5">{s.employeeName}</td>
                     <td className="px-4 py-2.5">{localDate(s.punchIn.timestamp)}</td>
-                    <td className="px-4 py-2.5">{localTime(s.punchIn.timestamp)}</td>
+                    <td className="px-4 py-2.5">
+                      <TimeCell
+                        log={s.punchIn}
+                        canEdit={canEdit}
+                        onEditClick={() => setEditingLog(s.punchIn)}
+                      />
+                    </td>
                     <td className="px-4 py-2.5">
                       {s.punchOut ? (
-                        localTime(s.punchOut.timestamp)
+                        <TimeCell
+                          log={s.punchOut}
+                          canEdit={canEdit}
+                          onEditClick={() => setEditingLog(s.punchOut)}
+                        />
                       ) : (
                         <span className="text-emerald-400">still in</span>
                       )}
@@ -197,6 +228,169 @@ function Dashboard() {
           </div>
         </>
       )}
+
+      {editingLog && (
+        <EditAttendanceModal
+          log={editingLog}
+          editorUid={uid}
+          editorName={email ?? uid}
+          onClose={() => setEditingLog(null)}
+          onSaved={handleLogUpdated}
+        />
+      )}
+    </div>
+  );
+}
+
+function TimeCell({
+  log,
+  canEdit,
+  onEditClick,
+}: {
+  log: AttendanceLog;
+  canEdit: boolean;
+  onEditClick: () => void;
+}) {
+  const editCount = log.edits?.length ?? 0;
+  return (
+    <span className="flex items-center gap-1.5">
+      {localTime(log.timestamp)}
+      {editCount > 0 && (
+        <span
+          title={`Edited ${editCount} time${editCount === 1 ? "" : "s"}`}
+          className="flex items-center gap-0.5 text-xs text-amber-400"
+        >
+          <History className="h-3 w-3" />
+        </span>
+      )}
+      {canEdit && (
+        <button
+          type="button"
+          onClick={onEditClick}
+          className="text-neutral-500 hover:text-neutral-200"
+          title="Edit this punch"
+        >
+          <Pencil className="h-3 w-3" />
+        </button>
+      )}
+    </span>
+  );
+}
+
+function EditAttendanceModal({
+  log,
+  editorUid,
+  editorName,
+  onClose,
+  onSaved,
+}: {
+  log: AttendanceLog;
+  editorUid: string;
+  editorName: string;
+  onClose: () => void;
+  onSaved: (updated: AttendanceLog) => void;
+}) {
+  const [newTime, setNewTime] = useState(() => toDatetimeLocalValue(log.timestamp));
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    if (!reason.trim()) {
+      setError("A reason is required.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const newIso = new Date(newTime).toISOString();
+      await editAttendanceLog(log, newIso, log.type, reason.trim(), editorUid, editorName);
+      onSaved({
+        ...log,
+        timestamp: newIso,
+        edits: [
+          ...(log.edits ?? []),
+          {
+            editedBy: editorUid,
+            editedByName: editorName,
+            reason: reason.trim(),
+            editedAt: new Date().toISOString(),
+            previousTimestamp: log.timestamp,
+            previousType: log.type,
+          },
+        ],
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save edit");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+      <div className="flex w-full max-w-sm flex-col gap-4 rounded-xl bg-neutral-900 p-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">
+            Edit {log.employeeName}&apos;s {log.type === "punch_in" ? "punch in" : "punch out"}
+          </h2>
+          <button type="button" onClick={onClose} className="text-neutral-400 hover:text-neutral-200">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {log.edits && log.edits.length > 0 && (
+          <div className="flex flex-col gap-1 rounded-lg bg-neutral-800 p-3 text-xs text-neutral-400">
+            <p className="font-medium text-neutral-300">Edit history</p>
+            {log.edits.map((edit, i) => (
+              <p key={i}>
+                {new Date(edit.editedAt).toLocaleString()} — {edit.editedByName}: &quot;
+                {edit.reason}&quot; (was {new Date(edit.previousTimestamp).toLocaleString()})
+              </p>
+            ))}
+          </div>
+        )}
+
+        <label className="flex flex-col gap-1 text-sm">
+          Corrected time
+          <input
+            type="datetime-local"
+            className="rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-600"
+            value={newTime}
+            onChange={(e) => setNewTime(e.target.value)}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          Reason (required)
+          <textarea
+            className="min-h-20 rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-600"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. Employee forgot to punch out, confirmed with them"
+          />
+        </label>
+
+        {error && <p className="text-sm text-red-400">{error}</p>}
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-lg bg-neutral-800 px-4 py-2 text-sm text-neutral-300 hover:bg-neutral-700"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-neutral-700"
+          >
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            Save correction
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
