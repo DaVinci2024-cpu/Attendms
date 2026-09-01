@@ -28,6 +28,7 @@ import type {
   PermissionGrant,
   Announcement,
   AvailabilityEntry,
+  ShiftNote,
 } from "./types";
 
 function companyDoc() {
@@ -76,6 +77,10 @@ function availabilityCol(): CollectionReference {
 
 function availabilityDocId(weekId: string, employeeId: string): string {
   return `${weekId}_${employeeId}`;
+}
+
+function shiftNotesCol(): CollectionReference {
+  return collection(getDb(), "companies", COMPANY_ID, "shiftNotes");
 }
 
 // Called once the admin is signed in (rules require auth to write the
@@ -357,4 +362,17 @@ export async function fetchAvailabilityForWeek(weekId: string): Promise<Availabi
   const q = query(availabilityCol(), where("weekId", "==", weekId));
   const snapshot = await getDocs(q);
   return snapshot.docs.map((d) => d.data() as AvailabilityEntry);
+}
+
+// One query per week (single where clause, no composite index needed),
+// grouped client-side by rowId+columnId — a week's total note count is
+// small enough that this is simpler than a query per cell.
+export async function fetchShiftNotesForWeek(weekId: string): Promise<ShiftNote[]> {
+  const q = query(shiftNotesCol(), where("weekId", "==", weekId));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((d) => d.data() as ShiftNote);
+}
+
+export async function postShiftNote(note: ShiftNote): Promise<void> {
+  await setDoc(doc(shiftNotesCol(), note.noteId), note);
 }

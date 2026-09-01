@@ -215,3 +215,20 @@ export interface AvailabilityEntry {
   note: string;
   submittedAt: string;
 }
+
+// A short note attached to one specific day+shift cell in a posted
+// schedule (e.g. "running 10 min late", "need someone to cover this") —
+// not a full chat thread, just context on that particular slot. Unlike
+// AvailabilityEntry, this needs an actual WeekSchedule to exist first
+// (rowId/columnId only mean something once that week has been created),
+// so there's no pre-schedule equivalent the way availability has.
+export interface ShiftNote {
+  noteId: string;
+  weekId: string;
+  rowId: string;
+  columnId: string;
+  authorUid: string;
+  authorName: string;
+  message: string;
+  postedAt: string;
+}

@@ -7,9 +7,11 @@ import {
   ChevronRight,
   History,
   Loader2,
+  MessageSquare,
   Plus,
   Printer,
   Save,
+  Send,
   Trash2,
   X,
 } from "lucide-react";
@@ -19,7 +21,9 @@ import {
   fetchAllEmployees,
   fetchAvailabilityForWeek,
   fetchScheduleColumnTemplate,
+  fetchShiftNotesForWeek,
   fetchWeekSchedule,
+  postShiftNote,
   saveScheduleColumnTemplate,
   saveWeekSchedule,
 } from "@/lib/firestoreRepo";
@@ -30,6 +34,7 @@ import type {
   Employee,
   ScheduleAssignment,
   ScheduleColumnTemplate,
+  ShiftNote,
   WeekSchedule,
 } from "@/lib/types";
 
@@ -82,6 +87,7 @@ function ScheduleGrid() {
   const [columnTemplate, setColumnTemplate] = useState<ScheduleColumnTemplate | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [availability, setAvailability] = useState<AvailabilityEntry[]>([]);
+  const [notes, setNotes] = useState<ShiftNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -96,16 +102,18 @@ function ScheduleGrid() {
       setLoading(true);
       setError(null);
       try {
-        const [existing, emps, template, availabilityList] = await Promise.all([
+        const [existing, emps, template, availabilityList, noteList] = await Promise.all([
           fetchWeekSchedule(weekId),
           fetchAllEmployees(),
           fetchScheduleColumnTemplate(),
           fetchAvailabilityForWeek(weekId),
+          fetchShiftNotesForWeek(weekId),
         ]);
         if (cancelled) return;
         setEmployees(emps);
         setColumnTemplate(template);
         setAvailability(availabilityList);
+        setNotes(noteList);
 
         if (existing) {
           const isCustom = existing.customColumns ?? false;
@@ -187,6 +195,24 @@ function ScheduleGrid() {
         : prev
     );
     setDirty(true);
+  }
+
+  // Posted immediately, independent of the Save/dirty flow — a note isn't
+  // part of the schedule doc itself, so there's nothing to lose by leaving
+  // this week without hitting Save.
+  async function postNote(rowId: string, columnId: string, message: string) {
+    const note: ShiftNote = {
+      noteId: `note_${crypto.randomUUID()}`,
+      weekId,
+      rowId,
+      columnId,
+      authorUid: uid,
+      authorName: editorName,
+      message,
+      postedAt: new Date().toISOString(),
+    };
+    await postShiftNote(note);
+    setNotes((prev) => [...prev, note]);
   }
 
   function renameColumn(columnId: string, label: string) {
@@ -496,6 +522,10 @@ function ScheduleGrid() {
                           onRemove={(employeeId) =>
                             removeAssignment(row.rowId, col.columnId, employeeId)
                           }
+                          notes={notes.filter(
+                            (n) => n.rowId === row.rowId && n.columnId === col.columnId
+                          )}
+                          onPostNote={(message) => postNote(row.rowId, col.columnId, message)}
                         />
                       </td>
                     ))}
@@ -608,15 +638,22 @@ function CellAssignments({
   editable,
   onAdd,
   onRemove,
+  notes,
+  onPostNote,
 }: {
   assignments: ScheduleAssignment[];
   employees: Employee[];
   editable: boolean;
   onAdd: (employee: Employee) => void;
   onRemove: (employeeId: string) => void;
+  notes: ShiftNote[];
+  onPostNote: (message: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [draftNote, setDraftNote] = useState("");
+  const [posting, setPosting] = useState(false);
 
   const assignedIds = new Set(assignments.map((a) => a.employeeId));
   const allAvailable = employees
@@ -698,6 +735,55 @@ function CellAssignments({
             + Add employee
           </button>
         )
+      )}
+
+      {notesOpen ? (
+        <div className="flex flex-col gap-1 rounded bg-neutral-800/60 p-1.5">
+          {notes.map((n) => (
+            <p key={n.noteId} className="text-xs text-neutral-300">
+              <span className="text-neutral-500">{n.authorName}:</span> {n.message}
+            </p>
+          ))}
+          <div className="flex gap-1">
+            <input
+              autoFocus
+              value={draftNote}
+              onChange={(e) => setDraftNote(e.target.value)}
+              placeholder="Add a note..."
+              className="min-w-0 flex-1 rounded bg-neutral-950 px-2 py-1 text-xs text-neutral-100 outline-none placeholder:text-neutral-500 focus:ring-2 focus:ring-blue-600"
+            />
+            <button
+              type="button"
+              disabled={posting || !draftNote.trim()}
+              onClick={async () => {
+                setPosting(true);
+                await onPostNote(draftNote.trim());
+                setDraftNote("");
+                setPosting(false);
+              }}
+              className="rounded bg-neutral-700 px-2 text-neutral-300 hover:bg-neutral-600 disabled:cursor-not-allowed disabled:opacity-50"
+              title="Post note"
+            >
+              <Send className="h-3 w-3" />
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => setNotesOpen(false)}
+            className="text-left text-xs text-neutral-500 hover:text-neutral-300"
+          >
+            Close
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setNotesOpen(true)}
+          className="flex items-center gap-1 rounded px-2 py-1 text-left text-xs text-neutral-400 hover:bg-neutral-800"
+        >
+          <MessageSquare className="h-3 w-3" />
+          {notes.length > 0 ? `${notes.length} note${notes.length === 1 ? "" : "s"}` : "Note"}
+        </button>
       )}
     </div>
   );

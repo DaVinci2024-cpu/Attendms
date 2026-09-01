@@ -167,6 +167,18 @@ service cloud.firestore {
         allow delete: if request.auth != null &&
           get(/databases/$(database)/documents/companies/$(companyId)/employees/$(resource.data.employeeId)).data.authUid == request.auth.uid;
       }
+
+      // A short note attached to one day+shift cell of a posted schedule.
+      // Any signed-in user can read/post (not restricted to their own
+      // shift — deliberately loose for a small team) but the author field
+      // must match who's actually posting; no editing or deleting a note
+      // once it's up.
+      match /shiftNotes/{noteId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null &&
+          request.resource.data.authorUid == request.auth.uid;
+        allow update, delete: if false;
+      }
     }
   }
 }

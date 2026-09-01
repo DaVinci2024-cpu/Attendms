@@ -15,7 +15,9 @@ import {
   LogOut,
   Loader2,
   Megaphone,
+  MessageSquare,
   Printer,
+  Send,
 } from "lucide-react";
 import { SchedulePrintView } from "@/components/SchedulePrintView";
 import { getAuthClient } from "@/lib/auth";
@@ -26,7 +28,9 @@ import {
   fetchEmployeeByAuthUid,
   fetchMyAvailability,
   fetchScheduleColumnTemplate,
+  fetchShiftNotesForWeek,
   fetchWeekSchedule,
+  postShiftNote,
   saveAvailability,
 } from "@/lib/firestoreRepo";
 import { pairSessions, formatDuration } from "@/lib/hours";
@@ -38,6 +42,7 @@ import type {
   AvailabilityEntry,
   Employee,
   ScheduleColumnTemplate,
+  ShiftNote,
   WeekSchedule,
 } from "@/lib/types";
 
@@ -213,6 +218,7 @@ function PortalDashboard({ employee }: { employee: Employee }) {
   const [draftNote, setDraftNote] = useState("");
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
   const [availabilitySaved, setAvailabilitySaved] = useState(false);
+  const [shiftNotes, setShiftNotes] = useState<ShiftNote[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -254,10 +260,11 @@ function PortalDashboard({ employee }: { employee: Employee }) {
       setScheduleLoading(true);
       setAvailabilitySaved(false);
       try {
-        const [week, template, myAvailability] = await Promise.all([
+        const [week, template, myAvailability, notes] = await Promise.all([
           fetchWeekSchedule(weekId),
           fetchScheduleColumnTemplate(),
           fetchMyAvailability(weekId, employee.employeeId),
+          fetchShiftNotesForWeek(weekId),
         ]);
         if (cancelled) return;
         // A week not split off into its own columns always follows the
@@ -271,6 +278,7 @@ function PortalDashboard({ employee }: { employee: Employee }) {
         setColumnTemplate(template);
         setDraftSlots(myAvailability?.availableSlots ?? {});
         setDraftNote(myAvailability?.note ?? "");
+        setShiftNotes(notes);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to load schedule");
@@ -293,6 +301,21 @@ function PortalDashboard({ employee }: { employee: Employee }) {
       next.setDate(next.getDate() + offsetWeeks * 7);
       return mondayOf(next);
     });
+  }
+
+  async function postShiftNoteFor(rowId: string, columnId: string, message: string) {
+    const note: ShiftNote = {
+      noteId: `note_${crypto.randomUUID()}`,
+      weekId,
+      rowId,
+      columnId,
+      authorUid: employee.authUid ?? "",
+      authorName: employee.fullName,
+      message,
+      postedAt: new Date().toISOString(),
+    };
+    await postShiftNote(note);
+    setShiftNotes((prev) => [...prev, note]);
   }
 
   function toggleAvailabilitySlot(dateKey: string, columnId: string) {
@@ -498,8 +521,11 @@ function PortalDashboard({ employee }: { employee: Employee }) {
                         <td className="px-2 py-1">{row.label}</td>
                         {schedule.columns.map((col) => {
                           const assignments = cellAssignments(row.cells, col.columnId);
+                          const isMine = assignments.some(
+                            (a) => a.employeeId === employee.employeeId
+                          );
                           return (
-                            <td key={col.columnId} className="px-2 py-1">
+                            <td key={col.columnId} className="px-2 py-1 align-top">
                               {assignments.length === 0 ? (
                                 <span className="text-neutral-600">—</span>
                               ) : (
@@ -517,6 +543,16 @@ function PortalDashboard({ employee }: { employee: Employee }) {
                                     </span>
                                   ))}
                                 </div>
+                              )}
+                              {isMine && (
+                                <PortalShiftNotes
+                                  notes={shiftNotes.filter(
+                                    (n) => n.rowId === row.rowId && n.columnId === col.columnId
+                                  )}
+                                  onPostNote={(message) =>
+                                    postShiftNoteFor(row.rowId, col.columnId, message)
+                                  }
+                                />
                               )}
                             </td>
                           );
@@ -603,5 +639,72 @@ function PortalDashboard({ employee }: { employee: Employee }) {
       />
     )}
     </>
+  );
+}
+
+// Only rendered on a cell the signed-in employee is themselves assigned
+// to — notes on other people's shifts aren't shown here.
+function PortalShiftNotes({
+  notes,
+  onPostNote,
+}: {
+  notes: ShiftNote[];
+  onPostNote: (message: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [posting, setPosting] = useState(false);
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mt-1 flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-300"
+      >
+        <MessageSquare className="h-3 w-3" />
+        {notes.length > 0 ? `${notes.length} note${notes.length === 1 ? "" : "s"}` : "Note"}
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-1 flex flex-col gap-1 rounded bg-neutral-800/60 p-1.5">
+      {notes.map((n) => (
+        <p key={n.noteId} className="text-xs text-neutral-300">
+          <span className="text-neutral-500">{n.authorName}:</span> {n.message}
+        </p>
+      ))}
+      <div className="flex gap-1">
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="e.g. running late"
+          className="min-w-0 flex-1 rounded bg-neutral-950 px-2 py-1 text-xs text-neutral-100 outline-none placeholder:text-neutral-500 focus:ring-2 focus:ring-blue-600"
+        />
+        <button
+          type="button"
+          disabled={posting || !draft.trim()}
+          onClick={async () => {
+            setPosting(true);
+            await onPostNote(draft.trim());
+            setDraft("");
+            setPosting(false);
+          }}
+          className="rounded bg-neutral-700 px-2 text-neutral-300 hover:bg-neutral-600 disabled:cursor-not-allowed disabled:opacity-50"
+          title="Post note"
+        >
+          <Send className="h-3 w-3" />
+        </button>
+      </div>
+      <button
+        type="button"
+        onClick={() => setOpen(false)}
+        className="text-left text-xs text-neutral-500 hover:text-neutral-300"
+      >
+        Close
+      </button>
+    </div>
   );
 }
