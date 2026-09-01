@@ -607,6 +607,11 @@ function PortalDashboard({ employee }: { employee: Employee }) {
                           className="border-b border-neutral-800 px-2 py-1 text-neutral-400"
                         >
                           {col.label}
+                          {col.startTime && col.endTime && (
+                            <div className="text-xs font-normal text-neutral-500">
+                              {col.startTime}–{col.endTime}
+                            </div>
+                          )}
                         </th>
                       ))}
                     </tr>

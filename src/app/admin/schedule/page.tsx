@@ -12,6 +12,7 @@ import {
   Printer,
   Save,
   Send,
+  ShieldCheck,
   Trash2,
   X,
 } from "lucide-react";
@@ -35,6 +36,7 @@ import type {
   ScheduleAssignment,
   ScheduleColumnTemplate,
   ShiftNote,
+  ShiftSupervisor,
   WeekSchedule,
 } from "@/lib/types";
 
@@ -239,6 +241,63 @@ function ScheduleGrid() {
             ...prev,
             columns: prev.columns.map((c) =>
               c.columnId === columnId ? { ...c, label } : c
+            ),
+          }
+        : prev
+    );
+    setDirty(true);
+  }
+
+  // A column with either time left blank gets no lateness/early-leave
+  // enforcement at the kiosk — both must be set for that to apply.
+  function setColumnTime(columnId: string, field: "startTime" | "endTime", value: string) {
+    setSchedule((prev) =>
+      prev
+        ? {
+            ...prev,
+            columns: prev.columns.map((c) =>
+              c.columnId === columnId ? { ...c, [field]: value || undefined } : c
+            ),
+          }
+        : prev
+    );
+    setDirty(true);
+  }
+
+  function setSupervisor(rowId: string, columnId: string, employee: Employee) {
+    setSchedule((prev) =>
+      prev
+        ? {
+            ...prev,
+            rows: prev.rows.map((r) =>
+              r.rowId === rowId
+                ? {
+                    ...r,
+                    supervisors: {
+                      ...r.supervisors,
+                      [columnId]: {
+                        employeeId: employee.employeeId,
+                        employeeName: employee.fullName,
+                      },
+                    },
+                  }
+                : r
+            ),
+          }
+        : prev
+    );
+    setDirty(true);
+  }
+
+  function clearSupervisor(rowId: string, columnId: string) {
+    setSchedule((prev) =>
+      prev
+        ? {
+            ...prev,
+            rows: prev.rows.map((r) =>
+              r.rowId === rowId
+                ? { ...r, supervisors: omitKey(r.supervisors ?? {}, columnId) }
+                : r
             ),
           }
         : prev
@@ -470,23 +529,51 @@ function ScheduleGrid() {
                       className="border-b border-neutral-800 px-3 py-2"
                     >
                       {canEdit ? (
-                        <div className="flex items-center gap-1">
-                          <input
-                            className="w-32 rounded bg-neutral-800 px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-blue-600"
-                            value={col.label}
-                            onChange={(e) => renameColumn(col.columnId, e.target.value)}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => removeColumn(col.columnId)}
-                            className="text-neutral-500 hover:text-red-400"
-                            title="Remove column"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-1">
+                            <input
+                              className="w-32 rounded bg-neutral-800 px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-blue-600"
+                              value={col.label}
+                              onChange={(e) => renameColumn(col.columnId, e.target.value)}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeColumn(col.columnId)}
+                              className="text-neutral-500 hover:text-red-400"
+                              title="Remove column"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-1 text-xs font-normal text-neutral-500">
+                            <input
+                              type="time"
+                              value={col.startTime ?? ""}
+                              onChange={(e) =>
+                                setColumnTime(col.columnId, "startTime", e.target.value)
+                              }
+                              className="w-[6.5rem] rounded bg-neutral-800 px-1 py-0.5 text-neutral-300 outline-none focus:ring-2 focus:ring-blue-600"
+                            />
+                            <span>–</span>
+                            <input
+                              type="time"
+                              value={col.endTime ?? ""}
+                              onChange={(e) =>
+                                setColumnTime(col.columnId, "endTime", e.target.value)
+                              }
+                              className="w-[6.5rem] rounded bg-neutral-800 px-1 py-0.5 text-neutral-300 outline-none focus:ring-2 focus:ring-blue-600"
+                            />
+                          </div>
                         </div>
                       ) : (
-                        col.label
+                        <div>
+                          <div>{col.label}</div>
+                          {col.startTime && col.endTime && (
+                            <div className="text-xs font-normal text-neutral-500">
+                              {col.startTime}–{col.endTime}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </th>
                   ))}
@@ -543,6 +630,13 @@ function ScheduleGrid() {
                             (n) => n.rowId === row.rowId && n.columnId === col.columnId
                           )}
                           onPostNote={(message) => postNote(row.rowId, col.columnId, message)}
+                        />
+                        <CellSupervisor
+                          supervisor={row.supervisors?.[col.columnId] ?? null}
+                          employees={employees}
+                          editable={canEdit}
+                          onSet={(employee) => setSupervisor(row.rowId, col.columnId, employee)}
+                          onClear={() => clearSupervisor(row.rowId, col.columnId)}
                         />
                       </td>
                     ))}
@@ -796,5 +890,113 @@ function CellAssignments({
         </button>
       )}
     </div>
+  );
+}
+
+// The person who can approve a late/unscheduled/early-out override for
+// this specific day+shift at the kiosk — not necessarily one of the
+// employees assigned to work it. One supervisor per cell; same searchable
+// list pattern as CellAssignments rather than a native select (which gets
+// hard to scan once there are ~20 employees).
+function CellSupervisor({
+  supervisor,
+  employees,
+  editable,
+  onSet,
+  onClear,
+}: {
+  supervisor: ShiftSupervisor | null;
+  employees: Employee[];
+  editable: boolean;
+  onSet: (employee: Employee) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  if (!editable) {
+    return supervisor ? (
+      <p className="mt-1 flex items-center gap-1 text-xs text-neutral-500">
+        <ShieldCheck className="h-3 w-3" /> {supervisor.employeeName}
+      </p>
+    ) : null;
+  }
+
+  const active = employees
+    .filter((e) => e.active)
+    .sort((a, b) => a.fullName.localeCompare(b.fullName));
+  const filtered = active.filter((e) =>
+    e.fullName.toLowerCase().includes(search.trim().toLowerCase())
+  );
+
+  if (supervisor) {
+    return (
+      <span className="mt-1 flex items-center justify-between gap-2 rounded bg-neutral-800 px-2 py-1 text-xs text-neutral-100">
+        <span className="flex items-center gap-1">
+          <ShieldCheck className="h-3 w-3 text-emerald-400" /> {supervisor.employeeName}
+        </span>
+        <button
+          type="button"
+          onClick={onClear}
+          className="text-neutral-500 hover:text-red-400"
+          title="Remove supervisor"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </span>
+    );
+  }
+
+  if (open) {
+    return (
+      <div className="mt-1 flex flex-col gap-1 rounded bg-neutral-800 p-1.5">
+        <input
+          autoFocus
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search name..."
+          className="rounded bg-neutral-950 px-2 py-1 text-xs text-neutral-100 outline-none placeholder:text-neutral-500 focus:ring-2 focus:ring-blue-600"
+        />
+        <div className="flex max-h-36 flex-col overflow-y-auto">
+          {filtered.map((emp) => (
+            <button
+              key={emp.employeeId}
+              type="button"
+              onClick={() => {
+                onSet(emp);
+                setOpen(false);
+                setSearch("");
+              }}
+              className="rounded px-2 py-1 text-left text-xs text-neutral-100 hover:bg-neutral-700"
+            >
+              {emp.fullName}
+            </button>
+          ))}
+          {filtered.length === 0 && (
+            <p className="px-2 py-1 text-xs text-neutral-500">No matches.</p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            setSearch("");
+          }}
+          className="text-left text-xs text-neutral-500 hover:text-neutral-300"
+        >
+          Close
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setOpen(true)}
+      className="mt-1 flex items-center gap-1 rounded px-2 py-1 text-left text-xs text-neutral-400 hover:bg-neutral-800"
+    >
+      <ShieldCheck className="h-3 w-3" /> Set supervisor
+    </button>
   );
 }

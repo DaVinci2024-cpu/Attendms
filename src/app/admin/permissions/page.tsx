@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Clock, Loader2, ShieldCheck, Trash2 } from "lucide-react";
+import { CheckCircle2, Clock, Loader2, ShieldCheck, Trash2 } from "lucide-react";
 import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
 import {
   fetchAllEmployees,
   fetchAllPermissionGrants,
+  fetchShiftSupervisorPermissionSettings,
   revokePermissionGrant,
   savePermissionGrant,
+  saveShiftSupervisorPermissionSettings,
 } from "@/lib/firestoreRepo";
 import { ALL_PERMISSIONS, PERMISSION_LABELS, grantIsActive } from "@/lib/permissions";
 import type { Employee, Permission, PermissionGrant } from "@/lib/types";
@@ -73,6 +75,8 @@ function PermissionsManager() {
           every capability and aren&apos;t managed here.
         </p>
       </div>
+
+      <ShiftSupervisorSettingsCard />
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 
@@ -257,5 +261,109 @@ function PersonRow({
         </div>
       )}
     </li>
+  );
+}
+
+// Company-wide: whichever permissions are checked here are what a shift
+// supervisor automatically gets, only while their assigned shift is
+// active (see /admin/schedule for assigning who's supervising a given
+// day+shift). Separate from the per-person grants above, and never
+// overwrites them.
+function ShiftSupervisorSettingsCard() {
+  const [selected, setSelected] = useState<Set<Permission>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchShiftSupervisorPermissionSettings()
+      .then((settings) => {
+        if (!cancelled) setSelected(new Set(settings?.permissions ?? []));
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function togglePermission(p: Permission) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(p)) next.delete(p);
+      else next.add(p);
+      return next;
+    });
+    setSaved(false);
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      await saveShiftSupervisorPermissionSettings({
+        permissions: Array.from(selected),
+        updatedAt: new Date().toISOString(),
+      });
+      setSaved(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-3 rounded-lg bg-neutral-900 px-4 py-3">
+      <div>
+        <h2 className="font-medium">Shift supervisor auto-access</h2>
+        <p className="text-xs text-neutral-400">
+          Whoever&apos;s assigned as a shift&apos;s supervisor on the schedule
+          automatically gets these permissions, only while that shift is
+          active.
+        </p>
+      </div>
+      {loading ? (
+        <div className="flex justify-center py-4">
+          <Loader2 className="h-5 w-5 animate-spin text-neutral-400" />
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-col gap-1.5">
+            {ALL_PERMISSIONS.map((p) => (
+              <label key={p} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={selected.has(p)}
+                  onChange={() => togglePermission(p)}
+                />
+                {PERMISSION_LABELS[p]}
+              </label>
+            ))}
+          </div>
+          {error && <p className="text-sm text-red-400">{error}</p>}
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center justify-center gap-2 self-start rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-neutral-700"
+          >
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            Save
+          </button>
+          {saved && (
+            <p className="flex items-center gap-1 text-xs text-emerald-400">
+              <CheckCircle2 className="h-3.5 w-3.5" /> Saved.
+            </p>
+          )}
+        </>
+      )}
+    </section>
   );
 }

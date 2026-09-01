@@ -78,9 +78,15 @@ export interface SuspiciousEvent {
 // cell holds zero or more real employees assigned to that day+block —
 // picked from the employee list, not typed as free text, so a cell can
 // have multiple people covering the same slot.
+// startTime/endTime are optional 24h "HH:MM" strings. A column with no
+// times set gets no lateness/early-leave enforcement at the kiosk (see
+// src/lib/punchRules.ts) — only the "must be scheduled at all" rule
+// applies. Both must be set together for enforcement to apply.
 export interface ScheduleColumn {
   columnId: string;
   label: string;
+  startTime?: string;
+  endTime?: string;
 }
 
 // employeeName is denormalized (copied in at assignment time) purely for
@@ -91,10 +97,19 @@ export interface ScheduleAssignment {
   employeeName: string;
 }
 
+// The person who can approve a late/unscheduled/early-out override for
+// this specific day+shift at the kiosk. Not necessarily one of the
+// assigned employees — just whoever's designated to answer for that slot.
+export interface ShiftSupervisor {
+  employeeId: string;
+  employeeName: string;
+}
+
 export interface ScheduleRow {
   rowId: string;
   label: string;
   cells: Record<string, ScheduleAssignment[]>; // keyed by columnId
+  supervisors?: Record<string, ShiftSupervisor>; // keyed by columnId
 }
 
 // The standard set of shift columns, shared across every week that hasn't
@@ -175,9 +190,41 @@ export interface PermissionGrant {
   uid: string;
   displayName: string;
   permissions: Permission[];
+  // null = active immediately (the historical default, before this field
+  // existed — every existing grant behaves the same as startsAtMillis:
+  // null).
+  startsAtMillis?: number | null;
   expiresAtMillis: number | null; // null = permanent
   grantedBy: string;
   grantedAt: string; // ISO, display only
+}
+
+// Which permissions a shift supervisor automatically gets while their
+// designated shift is active — company-wide, not per-shift, so admin only
+// has to decide this once.
+export interface ShiftSupervisorPermissionSettings {
+  permissions: Permission[];
+  updatedAt: string;
+}
+
+// Auto-managed, one per uid — kept in its own collection (rather than
+// reusing permissions/{uid}) specifically so it can never clobber a
+// manually-granted role: hasPermission() checks both and ORs them
+// together. Regenerated whenever the admin saves a schedule that assigns
+// this person as a shift supervisor; see src/lib/punchRules.ts for the
+// "single window per person" selection when they have more than one
+// supervisor slot in the same week.
+export interface ShiftSupervisorGrant {
+  uid: string;
+  employeeId: string;
+  employeeName: string;
+  permissions: Permission[];
+  startsAtMillis: number;
+  expiresAtMillis: number;
+  weekId: string;
+  rowId: string;
+  columnId: string;
+  updatedAt: string;
 }
 
 export interface Kiosk {

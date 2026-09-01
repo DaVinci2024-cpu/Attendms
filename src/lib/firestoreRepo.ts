@@ -29,6 +29,8 @@ import type {
   Announcement,
   AvailabilityEntry,
   ShiftNote,
+  ShiftSupervisorPermissionSettings,
+  ShiftSupervisorGrant,
 } from "./types";
 
 function companyDoc() {
@@ -81,6 +83,14 @@ function availabilityDocId(weekId: string, employeeId: string): string {
 
 function shiftNotesCol(): CollectionReference {
   return collection(getDb(), "companies", COMPANY_ID, "shiftNotes");
+}
+
+function shiftSupervisorPermissionsDoc() {
+  return doc(getDb(), "companies", COMPANY_ID, "settings", "shiftSupervisorPermissions");
+}
+
+function shiftSupervisorGrantsCol(): CollectionReference {
+  return collection(getDb(), "companies", COMPANY_ID, "shiftSupervisorGrants");
 }
 
 // Called once the admin is signed in (rules require auth to write the
@@ -375,4 +385,26 @@ export async function fetchShiftNotesForWeek(weekId: string): Promise<ShiftNote[
 
 export async function postShiftNote(note: ShiftNote): Promise<void> {
   await setDoc(doc(shiftNotesCol(), note.noteId), note);
+}
+
+export async function fetchShiftSupervisorPermissionSettings(): Promise<ShiftSupervisorPermissionSettings | null> {
+  const snapshot = await getDoc(shiftSupervisorPermissionsDoc());
+  return snapshot.exists() ? (snapshot.data() as ShiftSupervisorPermissionSettings) : null;
+}
+
+export async function saveShiftSupervisorPermissionSettings(
+  settings: ShiftSupervisorPermissionSettings
+): Promise<void> {
+  await setDoc(shiftSupervisorPermissionsDoc(), settings);
+}
+
+export async function saveShiftSupervisorGrant(grant: ShiftSupervisorGrant): Promise<void> {
+  await setDoc(doc(shiftSupervisorGrantsCol(), grant.uid), grant);
+}
+
+export async function fetchShiftSupervisorGrant(
+  uid: string
+): Promise<ShiftSupervisorGrant | null> {
+  const snapshot = await getDoc(doc(shiftSupervisorGrantsCol(), uid));
+  return snapshot.exists() ? (snapshot.data() as ShiftSupervisorGrant) : null;
 }

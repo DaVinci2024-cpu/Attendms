@@ -2,7 +2,10 @@ import type { Permission, PermissionGrant } from "./types";
 
 export function grantIsActive(grant: PermissionGrant | null): boolean {
   if (!grant) return false;
-  return grant.expiresAtMillis === null || grant.expiresAtMillis > Date.now();
+  const now = Date.now();
+  const started = grant.startsAtMillis == null || grant.startsAtMillis <= now;
+  const notExpired = grant.expiresAtMillis === null || grant.expiresAtMillis > now;
+  return started && notExpired;
 }
 
 export function grantHas(grant: PermissionGrant | null, permission: Permission): boolean {

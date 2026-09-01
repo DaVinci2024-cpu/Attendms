@@ -48,6 +48,11 @@ export function SchedulePrintView({
             {schedule.columns.map((col) => (
               <th key={col.columnId} className="border border-black px-2 py-1">
                 {col.label}
+                {col.startTime && col.endTime && (
+                  <div className="text-xs font-normal text-neutral-600">
+                    {col.startTime}–{col.endTime}
+                  </div>
+                )}
               </th>
             ))}
           </tr>
