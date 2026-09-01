@@ -8,7 +8,8 @@ import {
   updatePassword,
   type User,
 } from "firebase/auth";
-import { ChevronLeft, ChevronRight, LogOut, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, LogOut, Loader2, Printer } from "lucide-react";
+import { SchedulePrintView } from "@/components/SchedulePrintView";
 import { getAuthClient } from "@/lib/auth";
 import {
   clearMustChangePassword,
@@ -257,7 +258,8 @@ function PortalDashboard({ employee }: { employee: Employee }) {
   const totalMs = sessions.reduce((sum, s) => sum + (s.durationMs ?? 0), 0);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
+    <>
+    <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8 print:hidden">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Hi, {employee.fullName}</h1>
@@ -350,6 +352,15 @@ function PortalDashboard({ employee }: { employee: Employee }) {
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  disabled={!schedule}
+                  className="flex items-center gap-1.5 rounded-lg bg-neutral-800 px-2.5 py-1.5 text-xs hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  title="Print this week's schedule"
+                >
+                  <Printer className="h-3.5 w-3.5" /> Print
+                </button>
               </div>
             </div>
             {scheduleLoading ? (
@@ -417,5 +428,13 @@ function PortalDashboard({ employee }: { employee: Employee }) {
         </>
       )}
     </div>
+    {schedule && (
+      <SchedulePrintView
+        schedule={schedule}
+        subtitle={`For: ${employee.fullName}`}
+        highlightEmployeeId={employee.employeeId}
+      />
+    )}
+    </>
   );
 }

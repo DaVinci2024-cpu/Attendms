@@ -7,11 +7,13 @@ import {
   History,
   Loader2,
   Plus,
+  Printer,
   Save,
   Trash2,
   X,
 } from "lucide-react";
 import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
+import { SchedulePrintView } from "@/components/SchedulePrintView";
 import {
   fetchAllEmployees,
   fetchScheduleColumnTemplate,
@@ -328,7 +330,8 @@ function ScheduleGrid() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-4 py-8">
+    <>
+    <div className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-4 py-8 print:hidden">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Schedule</h1>
         <div className="flex items-center gap-2">
@@ -346,6 +349,14 @@ function ScheduleGrid() {
             className="rounded-lg bg-neutral-800 p-2 hover:bg-neutral-700"
           >
             <ChevronRight className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            disabled={!schedule}
+            className="flex items-center gap-1.5 rounded-lg bg-neutral-800 px-3 py-2 text-sm hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Printer className="h-4 w-4" /> Print
           </button>
         </div>
       </div>
@@ -534,6 +545,8 @@ function ScheduleGrid() {
         </>
       )}
     </div>
+    {schedule && <SchedulePrintView schedule={schedule} />}
+    </>
   );
 }
 
