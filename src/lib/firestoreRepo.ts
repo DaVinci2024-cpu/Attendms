@@ -170,6 +170,13 @@ export async function clearMustChangePassword(employeeId: string): Promise<void>
   await updateDoc(doc(employeesCol(), employeeId), { mustChangePassword: false });
 }
 
+export async function setEmployeeSupervisorFlag(
+  employeeId: string,
+  isSupervisor: boolean
+): Promise<void> {
+  await updateDoc(doc(employeesCol(), employeeId), { isSupervisor });
+}
+
 // Employee-initiated deletion path (spec Section 5): removes the
 // descriptors and consent record entirely, independent of just flipping
 // active:false. Historical attendance logs (name + timestamp only, no

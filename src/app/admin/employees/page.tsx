@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, KeyRound, Loader2, Trash2 } from "lucide-react";
+import { CheckCircle2, KeyRound, Loader2, ShieldCheck, Trash2 } from "lucide-react";
 import { RequireAdmin } from "@/components/RequireAdmin";
 import {
   deleteEmployee,
   fetchAllEmployees,
   fetchEmployeeByPortalUsername,
   linkEmployeePortalAccount,
+  setEmployeeSupervisorFlag,
 } from "@/lib/firestoreRepo";
 import { createEmployeePortalAccount } from "@/lib/auth";
 import { portalEmail } from "@/lib/constants";
@@ -85,6 +86,21 @@ function EmployeeList() {
     );
   }
 
+  async function handleToggleSupervisor(employeeId: string, isSupervisor: boolean) {
+    setEmployees((prev) =>
+      prev?.map((e) => (e.employeeId === employeeId ? { ...e, isSupervisor } : e)) ?? null
+    );
+    try {
+      await setEmployeeSupervisorFlag(employeeId, isSupervisor);
+    } catch (err) {
+      // Revert on failure — the optimistic update above assumed it would work.
+      setEmployees((prev) =>
+        prev?.map((e) => (e.employeeId === employeeId ? { ...e, isSupervisor: !isSupervisor } : e)) ?? null
+      );
+      setError(err instanceof Error ? err.message : "Failed to update supervisor status");
+    }
+  }
+
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
       <h1 className="text-2xl font-semibold">Employees</h1>
@@ -111,6 +127,9 @@ function EmployeeList() {
             deleting={deletingId === employee.employeeId}
             onDelete={() => handleDelete(employee.employeeId, employee.fullName)}
             onPortalLinked={(username) => handlePortalLinked(employee.employeeId, username)}
+            onToggleSupervisor={(isSupervisor) =>
+              handleToggleSupervisor(employee.employeeId, isSupervisor)
+            }
           />
         ))}
       </ul>
@@ -123,11 +142,13 @@ function EmployeeRow({
   deleting,
   onDelete,
   onPortalLinked,
+  onToggleSupervisor,
 }: {
   employee: Employee;
   deleting: boolean;
   onDelete: () => void;
   onPortalLinked: (portalUsername: string) => void;
+  onToggleSupervisor: (isSupervisor: boolean) => void;
 }) {
   const [settingUp, setSettingUp] = useState(false);
   const [username, setUsername] = useState(() => slugifyUsername(employee.fullName));
@@ -171,7 +192,14 @@ function EmployeeRow({
     <li className="rounded-lg bg-neutral-900 px-4 py-3">
       <div className="flex items-center justify-between">
         <div>
-          <p className="font-medium">{employee.fullName}</p>
+          <p className="flex items-center gap-1.5 font-medium">
+            {employee.fullName}
+            {employee.isSupervisor && (
+              <span className="flex items-center gap-1 rounded-full bg-emerald-900/50 px-2 py-0.5 text-xs font-normal text-emerald-300">
+                <ShieldCheck className="h-3 w-3" /> Supervisor
+              </span>
+            )}
+          </p>
           <p className="text-xs text-neutral-400">
             {employee.faceDescriptors.length} snapshot
             {employee.faceDescriptors.length === 1 ? "" : "s"} · {employee.role}
@@ -180,6 +208,14 @@ function EmployeeRow({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-neutral-400">
+            <input
+              type="checkbox"
+              checked={employee.isSupervisor ?? false}
+              onChange={(e) => onToggleSupervisor(e.target.checked)}
+            />
+            Supervisor
+          </label>
           {!employee.portalUsername && !settingUp && (
             <button
               type="button"

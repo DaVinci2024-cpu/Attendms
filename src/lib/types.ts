@@ -32,6 +32,12 @@ export interface Employee {
   // True after an admin creates/resets the portal account with a temporary
   // password, until the employee sets their own on first login.
   mustChangePassword?: boolean;
+  // A fixed designation set once on the employee, independent of any
+  // particular shift — makes them eligible to be picked as a shift's
+  // designated supervisor on the schedule (src/app/admin/schedule), and
+  // shows a badge wherever their name appears so it's obvious at a glance
+  // who holds this role, not just when they happen to be assigned one.
+  isSupervisor?: boolean;
 }
 
 export type PunchType = "punch_in" | "punch_out";

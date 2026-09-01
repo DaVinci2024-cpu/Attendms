@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   CalendarCheck,
   ChevronLeft,
@@ -766,6 +767,9 @@ function CellAssignments({
   const filtered = allAvailable.filter((e) =>
     e.fullName.toLowerCase().includes(search.trim().toLowerCase())
   );
+  const supervisorIds = new Set(
+    employees.filter((e) => e.isSupervisor).map((e) => e.employeeId)
+  );
 
   return (
     <div className="flex min-w-[170px] flex-col gap-1">
@@ -777,7 +781,12 @@ function CellAssignments({
           key={a.employeeId}
           className="flex items-center justify-between gap-2 rounded bg-neutral-800 px-2 py-1 text-xs text-neutral-100"
         >
-          {a.employeeName}
+          <span className="flex items-center gap-1">
+            {supervisorIds.has(a.employeeId) && (
+              <ShieldCheck className="h-3 w-3 shrink-0 text-emerald-400" />
+            )}
+            {a.employeeName}
+          </span>
           {editable && (
             <button
               type="button"
@@ -922,10 +931,12 @@ function CellSupervisor({
     ) : null;
   }
 
-  const active = employees
-    .filter((e) => e.active)
+  // Only employees flagged as a supervisor (see /admin/employees) are
+  // eligible — a fixed designation, not something picked freely per shift.
+  const eligible = employees
+    .filter((e) => e.active && e.isSupervisor)
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
-  const filtered = active.filter((e) =>
+  const filtered = eligible.filter((e) =>
     e.fullName.toLowerCase().includes(search.trim().toLowerCase())
   );
 
@@ -987,6 +998,17 @@ function CellSupervisor({
           Close
         </button>
       </div>
+    );
+  }
+
+  if (eligible.length === 0) {
+    return (
+      <Link
+        href="/admin/employees"
+        className="mt-1 block text-xs text-neutral-500 underline hover:text-neutral-300"
+      >
+        No one&apos;s marked as a supervisor yet — set one up
+      </Link>
     );
   }
 
