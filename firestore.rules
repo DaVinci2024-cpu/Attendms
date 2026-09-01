@@ -109,6 +109,14 @@ service cloud.firestore {
         allow write: if hasPermission("manage_schedule");
       }
 
+      // The standard shift-column set shared across every week that hasn't
+      // been split off into its own custom columns (WeekSchedule.
+      // customColumns). Same read/write pattern as schedules above.
+      match /settings/scheduleColumns {
+        allow read: if request.auth != null;
+        allow write: if hasPermission("manage_schedule");
+      }
+
       // The kiosk screen's headline/notice text — kept out of the main
       // company doc specifically so it can be world-readable (the kiosk
       // never signs in) without also exposing adminEmail/adminUids.

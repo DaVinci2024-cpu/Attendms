@@ -97,11 +97,33 @@ export interface ScheduleRow {
   cells: Record<string, ScheduleAssignment[]>; // keyed by columnId
 }
 
+// The standard set of shift columns, shared across every week that hasn't
+// been explicitly split off from it (see WeekSchedule.customColumns below).
+// Editing columns on a normal week edits this document; only a week marked
+// customColumns writes its own columns instead.
+export interface ScheduleColumnTemplate {
+  columns: ScheduleColumn[];
+  updatedAt: string;
+}
+
 export interface WeekSchedule {
   weekId: string; // Monday of the week, YYYY-MM-DD
+  // Resolved columns as of the last save — for a week that isn't
+  // customColumns, this mirrors the standard template at that time and
+  // gets refreshed from it on next load; for a customColumns week, this is
+  // the authoritative, week-only column set.
   columns: ScheduleColumn[];
+  // True once an admin has explicitly split this week's columns off from
+  // the standard template ("keep this week separate"). Absent/false means
+  // this week always follows the template.
+  customColumns?: boolean;
   rows: ScheduleRow[];
   updatedAt: string;
+  updatedBy?: string; // uid of whoever last saved this week
+  updatedByName?: string;
+  createdBy?: string; // uid of whoever first saved this week
+  createdByName?: string;
+  createdAt?: string;
 }
 
 export interface Company {

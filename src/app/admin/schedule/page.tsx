@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
+  History,
   Loader2,
   Plus,
   Save,
@@ -11,10 +12,21 @@ import {
   X,
 } from "lucide-react";
 import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
-import { fetchAllEmployees, fetchWeekSchedule, saveWeekSchedule } from "@/lib/firestoreRepo";
-import { cellAssignments } from "@/lib/schedule";
+import {
+  fetchAllEmployees,
+  fetchScheduleColumnTemplate,
+  fetchWeekSchedule,
+  saveScheduleColumnTemplate,
+  saveWeekSchedule,
+} from "@/lib/firestoreRepo";
+import { cellAssignments, defaultColumns } from "@/lib/schedule";
 import { mondayOf, toWeekId } from "@/lib/week";
-import type { Employee, ScheduleAssignment, ScheduleColumn, WeekSchedule } from "@/lib/types";
+import type {
+  Employee,
+  ScheduleAssignment,
+  ScheduleColumnTemplate,
+  WeekSchedule,
+} from "@/lib/types";
 
 const DAY_NAMES = [
   "Monday",
@@ -26,8 +38,8 @@ const DAY_NAMES = [
   "Sunday",
 ];
 
-function defaultSchedule(monday: Date): WeekSchedule {
-  const rows = DAY_NAMES.map((name, i) => {
+function defaultRows(monday: Date) {
+  return DAY_NAMES.map((name, i) => {
     const d = new Date(monday);
     d.setDate(d.getDate() + i);
     return {
@@ -39,15 +51,6 @@ function defaultSchedule(monday: Date): WeekSchedule {
       cells: {},
     };
   });
-  const columns: ScheduleColumn[] = [
-    { columnId: `col_${crypto.randomUUID()}`, label: "Shift" },
-  ];
-  return {
-    weekId: toWeekId(monday),
-    columns,
-    rows,
-    updatedAt: new Date().toISOString(),
-  };
 }
 
 function omitKey<T>(obj: Record<string, T>, key: string): Record<string, T> {
@@ -65,11 +68,13 @@ export default function AdminSchedulePage() {
 }
 
 function ScheduleGrid() {
-  const { has } = usePermissions();
+  const { has, uid, email } = usePermissions();
   const canEdit = has("manage_schedule");
+  const editorName = email ?? uid;
 
   const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
   const [schedule, setSchedule] = useState<WeekSchedule | null>(null);
+  const [columnTemplate, setColumnTemplate] = useState<ScheduleColumnTemplate | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -85,13 +90,31 @@ function ScheduleGrid() {
       setLoading(true);
       setError(null);
       try {
-        const [existing, emps] = await Promise.all([
+        const [existing, emps, template] = await Promise.all([
           fetchWeekSchedule(weekId),
           fetchAllEmployees(),
+          fetchScheduleColumnTemplate(),
         ]);
         if (cancelled) return;
-        setSchedule(existing ?? defaultSchedule(weekStart));
         setEmployees(emps);
+        setColumnTemplate(template);
+
+        if (existing) {
+          const isCustom = existing.customColumns ?? false;
+          setSchedule({
+            ...existing,
+            columns: isCustom ? existing.columns : template?.columns ?? existing.columns,
+            customColumns: isCustom,
+          });
+        } else {
+          setSchedule({
+            weekId,
+            columns: template?.columns ?? defaultColumns(),
+            customColumns: false,
+            rows: defaultRows(weekStart),
+            updatedAt: new Date().toISOString(),
+          });
+        }
         setDirty(false);
       } catch (err) {
         if (!cancelled) {
@@ -237,12 +260,51 @@ function ScheduleGrid() {
     setDirty(true);
   }
 
+  // Splits this week's columns off from the standard set — from now on,
+  // editing columns here only affects this week.
+  function keepSeparate() {
+    setSchedule((prev) => (prev ? { ...prev, customColumns: true } : prev));
+    setDirty(true);
+  }
+
+  // Drops this week's own columns and goes back to following the standard
+  // set (picking up whatever it currently is, even if it changed since).
+  function useStandardColumns() {
+    setSchedule((prev) =>
+      prev
+        ? {
+            ...prev,
+            customColumns: false,
+            columns: columnTemplate?.columns ?? prev.columns,
+          }
+        : prev
+    );
+    setDirty(true);
+  }
+
   async function handleSave() {
     if (!schedule) return;
     setSaving(true);
     setError(null);
     try {
-      await saveWeekSchedule({ ...schedule, updatedAt: new Date().toISOString() });
+      const now = new Date().toISOString();
+      const firstSave = !schedule.createdAt;
+      const payload: WeekSchedule = {
+        ...schedule,
+        updatedAt: now,
+        updatedBy: uid,
+        updatedByName: editorName,
+        createdBy: firstSave ? uid : schedule.createdBy,
+        createdByName: firstSave ? editorName : schedule.createdByName,
+        createdAt: firstSave ? now : schedule.createdAt,
+      };
+      await saveWeekSchedule(payload);
+      if (!payload.customColumns) {
+        const template: ScheduleColumnTemplate = { columns: payload.columns, updatedAt: now };
+        await saveScheduleColumnTemplate(template);
+        setColumnTemplate(template);
+      }
+      setSchedule(payload);
       setDirty(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save schedule");
@@ -302,6 +364,39 @@ function ScheduleGrid() {
         </div>
       ) : (
         <>
+          {canEdit && (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+              {schedule.customColumns ? (
+                <>
+                  <span>
+                    This week has its own columns, separate from the standard schedule.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={useStandardColumns}
+                    className="text-blue-400 underline hover:text-blue-300"
+                  >
+                    Use standard columns
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span>
+                    These columns are the standard schedule — editing them updates
+                    every week that hasn&apos;t been kept separate.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={keepSeparate}
+                    className="text-blue-400 underline hover:text-blue-300"
+                  >
+                    Keep this week separate
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
           <div className="overflow-x-auto rounded-xl bg-neutral-900">
             <table className="w-full border-collapse text-left text-sm">
               <thead>
@@ -419,6 +514,23 @@ function ScheduleGrid() {
               </button>
             </div>
           )}
+
+          {schedule.createdAt && (
+            <div className="flex items-center gap-2 text-xs text-neutral-500">
+              <History className="h-3.5 w-3.5 shrink-0" />
+              <span>
+                Created by {schedule.createdByName ?? "—"} on{" "}
+                {new Date(schedule.createdAt).toLocaleString()}
+                {schedule.updatedAt !== schedule.createdAt && schedule.updatedByName && (
+                  <>
+                    {" "}
+                    · Last edited by {schedule.updatedByName} on{" "}
+                    {new Date(schedule.updatedAt).toLocaleString()}
+                  </>
+                )}
+              </span>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -438,20 +550,26 @@ function CellAssignments({
   onAdd: (employee: Employee) => void;
   onRemove: (employeeId: string) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
   const assignedIds = new Set(assignments.map((a) => a.employeeId));
-  const available = employees
+  const allAvailable = employees
     .filter((e) => e.active && !assignedIds.has(e.employeeId))
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
+  const filtered = allAvailable.filter((e) =>
+    e.fullName.toLowerCase().includes(search.trim().toLowerCase())
+  );
 
   return (
-    <div className="flex min-w-[160px] flex-col gap-1">
+    <div className="flex min-w-[170px] flex-col gap-1">
       {assignments.length === 0 && !editable && (
         <span className="text-neutral-600">—</span>
       )}
       {assignments.map((a) => (
         <span
           key={a.employeeId}
-          className="flex items-center justify-between gap-2 rounded bg-neutral-800 px-2 py-1 text-xs"
+          className="flex items-center justify-between gap-2 rounded bg-neutral-800 px-2 py-1 text-xs text-neutral-100"
         >
           {a.employeeName}
           {editable && (
@@ -466,22 +584,55 @@ function CellAssignments({
           )}
         </span>
       ))}
-      {editable && available.length > 0 && (
-        <select
-          value=""
-          onChange={(e) => {
-            const employee = available.find((emp) => emp.employeeId === e.target.value);
-            if (employee) onAdd(employee);
-          }}
-          className="rounded bg-neutral-800/60 px-2 py-1 text-xs text-neutral-400 outline-none focus:ring-2 focus:ring-blue-600"
-        >
-          <option value="">+ Add employee</option>
-          {available.map((emp) => (
-            <option key={emp.employeeId} value={emp.employeeId}>
-              {emp.fullName}
-            </option>
-          ))}
-        </select>
+
+      {editable && allAvailable.length > 0 && (
+        open ? (
+          <div className="flex flex-col gap-1 rounded bg-neutral-800 p-1.5">
+            <input
+              autoFocus
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search name..."
+              className="rounded bg-neutral-950 px-2 py-1 text-xs text-neutral-100 outline-none placeholder:text-neutral-500 focus:ring-2 focus:ring-blue-600"
+            />
+            <div className="flex max-h-36 flex-col overflow-y-auto">
+              {filtered.map((emp) => (
+                <button
+                  key={emp.employeeId}
+                  type="button"
+                  onClick={() => {
+                    onAdd(emp);
+                    setSearch("");
+                  }}
+                  className="rounded px-2 py-1 text-left text-xs text-neutral-100 hover:bg-neutral-700"
+                >
+                  {emp.fullName}
+                </button>
+              ))}
+              {filtered.length === 0 && (
+                <p className="px-2 py-1 text-xs text-neutral-500">No matches.</p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                setSearch("");
+              }}
+              className="text-left text-xs text-neutral-500 hover:text-neutral-300"
+            >
+              Close
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="rounded px-2 py-1 text-left text-xs text-neutral-400 hover:bg-neutral-800"
+          >
+            + Add employee
+          </button>
+        )
       )}
     </div>
   );

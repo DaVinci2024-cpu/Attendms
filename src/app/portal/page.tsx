@@ -14,6 +14,7 @@ import {
   clearMustChangePassword,
   fetchAttendanceForEmployee,
   fetchEmployeeByAuthUid,
+  fetchScheduleColumnTemplate,
   fetchWeekSchedule,
 } from "@/lib/firestoreRepo";
 import { pairSessions, formatDuration } from "@/lib/hours";
@@ -193,11 +194,19 @@ function PortalDashboard({ employee }: { employee: Employee }) {
     Promise.all([
       fetchAttendanceForEmployee(employee.employeeId),
       fetchWeekSchedule(weekId),
+      fetchScheduleColumnTemplate(),
     ])
-      .then(([attendance, week]) => {
+      .then(([attendance, week, template]) => {
         if (cancelled) return;
         setLogs(attendance);
-        setSchedule(week);
+        // A week not split off into its own columns always follows the
+        // current standard set, even if this week's own doc hasn't been
+        // re-saved since the standard columns last changed.
+        setSchedule(
+          week && !week.customColumns && template
+            ? { ...week, columns: template.columns }
+            : week
+        );
       })
       .catch((err) => {
         if (!cancelled) {

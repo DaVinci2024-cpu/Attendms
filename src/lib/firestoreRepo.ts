@@ -21,6 +21,7 @@ import type {
   SuspiciousEvent,
   Company,
   WeekSchedule,
+  ScheduleColumnTemplate,
   KioskDisplaySettings,
   AuthPolicy,
   PermissionGrant,
@@ -44,6 +45,10 @@ function suspiciousEventsCol(): CollectionReference {
 
 function scheduleDoc(weekId: string) {
   return doc(getDb(), "companies", COMPANY_ID, "schedules", weekId);
+}
+
+function scheduleColumnsDoc() {
+  return doc(getDb(), "companies", COMPANY_ID, "settings", "scheduleColumns");
 }
 
 function kioskDisplayDoc() {
@@ -185,6 +190,19 @@ export async function fetchWeekSchedule(
 
 export async function saveWeekSchedule(schedule: WeekSchedule): Promise<void> {
   await setDoc(scheduleDoc(schedule.weekId), schedule);
+}
+
+// The standard column set shared by every week that hasn't been split off
+// via WeekSchedule.customColumns.
+export async function fetchScheduleColumnTemplate(): Promise<ScheduleColumnTemplate | null> {
+  const snapshot = await getDoc(scheduleColumnsDoc());
+  return snapshot.exists() ? (snapshot.data() as ScheduleColumnTemplate) : null;
+}
+
+export async function saveScheduleColumnTemplate(
+  template: ScheduleColumnTemplate
+): Promise<void> {
+  await setDoc(scheduleColumnsDoc(), template);
 }
 
 export async function fetchKioskDisplaySettings(): Promise<KioskDisplaySettings | null> {
