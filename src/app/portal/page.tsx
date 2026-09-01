@@ -310,11 +310,31 @@ function PortalDashboard({ employee }: { employee: Employee }) {
                     {schedule.rows.map((row) => (
                       <tr key={row.rowId} className="border-b border-neutral-800">
                         <td className="px-2 py-1">{row.label}</td>
-                        {schedule.columns.map((col) => (
-                          <td key={col.columnId} className="px-2 py-1">
-                            {row.cells[col.columnId] ?? ""}
-                          </td>
-                        ))}
+                        {schedule.columns.map((col) => {
+                          const assignments = row.cells[col.columnId] ?? [];
+                          return (
+                            <td key={col.columnId} className="px-2 py-1">
+                              {assignments.length === 0 ? (
+                                <span className="text-neutral-600">—</span>
+                              ) : (
+                                <div className="flex flex-col gap-0.5">
+                                  {assignments.map((a) => (
+                                    <span
+                                      key={a.employeeId}
+                                      className={
+                                        a.employeeId === employee.employeeId
+                                          ? "font-medium text-emerald-400"
+                                          : undefined
+                                      }
+                                    >
+                                      {a.employeeName}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </td>
+                          );
+                        })}
                       </tr>
                     ))}
                   </tbody>

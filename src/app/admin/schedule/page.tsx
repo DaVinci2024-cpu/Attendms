@@ -8,11 +8,12 @@ import {
   Plus,
   Save,
   Trash2,
+  X,
 } from "lucide-react";
-import { RequireAdmin } from "@/components/RequireAdmin";
-import { fetchWeekSchedule, saveWeekSchedule } from "@/lib/firestoreRepo";
+import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
+import { fetchAllEmployees, fetchWeekSchedule, saveWeekSchedule } from "@/lib/firestoreRepo";
 import { mondayOf, toWeekId } from "@/lib/week";
-import type { ScheduleColumn, WeekSchedule } from "@/lib/types";
+import type { Employee, ScheduleAssignment, ScheduleColumn, WeekSchedule } from "@/lib/types";
 
 const DAY_NAMES = [
   "Monday",
@@ -48,10 +49,7 @@ function defaultSchedule(monday: Date): WeekSchedule {
   };
 }
 
-function omitKey(
-  obj: Record<string, string>,
-  key: string
-): Record<string, string> {
+function omitKey<T>(obj: Record<string, T>, key: string): Record<string, T> {
   const next = { ...obj };
   delete next[key];
   return next;
@@ -66,8 +64,12 @@ export default function AdminSchedulePage() {
 }
 
 function ScheduleGrid() {
+  const { has } = usePermissions();
+  const canEdit = has("manage_schedule");
+
   const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
   const [schedule, setSchedule] = useState<WeekSchedule | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -82,9 +84,13 @@ function ScheduleGrid() {
       setLoading(true);
       setError(null);
       try {
-        const existing = await fetchWeekSchedule(weekId);
+        const [existing, emps] = await Promise.all([
+          fetchWeekSchedule(weekId),
+          fetchAllEmployees(),
+        ]);
         if (cancelled) return;
         setSchedule(existing ?? defaultSchedule(weekStart));
+        setEmployees(emps);
         setDirty(false);
       } catch (err) {
         if (!cancelled) {
@@ -102,14 +108,47 @@ function ScheduleGrid() {
     };
   }, [weekId, weekStart]);
 
-  function updateCell(rowId: string, columnId: string, value: string) {
+  function addAssignment(rowId: string, columnId: string, employee: Employee) {
     setSchedule((prev) =>
       prev
         ? {
             ...prev,
             rows: prev.rows.map((r) =>
               r.rowId === rowId
-                ? { ...r, cells: { ...r.cells, [columnId]: value } }
+                ? {
+                    ...r,
+                    cells: {
+                      ...r.cells,
+                      [columnId]: [
+                        ...(r.cells[columnId] ?? []),
+                        { employeeId: employee.employeeId, employeeName: employee.fullName },
+                      ],
+                    },
+                  }
+                : r
+            ),
+          }
+        : prev
+    );
+    setDirty(true);
+  }
+
+  function removeAssignment(rowId: string, columnId: string, employeeId: string) {
+    setSchedule((prev) =>
+      prev
+        ? {
+            ...prev,
+            rows: prev.rows.map((r) =>
+              r.rowId === rowId
+                ? {
+                    ...r,
+                    cells: {
+                      ...r.cells,
+                      [columnId]: (r.cells[columnId] ?? []).filter(
+                        (a) => a.employeeId !== employeeId
+                      ),
+                    },
+                  }
                 : r
             ),
           }
@@ -248,6 +287,12 @@ function ScheduleGrid() {
         </div>
       </div>
 
+      {!canEdit && (
+        <p className="rounded-lg bg-neutral-900 px-3 py-2 text-sm text-neutral-400">
+          You have read-only access to the schedule.
+        </p>
+      )}
+
       {error && <p className="text-sm text-red-400">{error}</p>}
 
       {loading || !schedule ? (
@@ -268,97 +313,174 @@ function ScheduleGrid() {
                       key={col.columnId}
                       className="border-b border-neutral-800 px-3 py-2"
                     >
-                      <div className="flex items-center gap-1">
-                        <input
-                          className="w-32 rounded bg-neutral-800 px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-blue-600"
-                          value={col.label}
-                          onChange={(e) => renameColumn(col.columnId, e.target.value)}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeColumn(col.columnId)}
-                          className="text-neutral-500 hover:text-red-400"
-                          title="Remove column"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                      {canEdit ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            className="w-32 rounded bg-neutral-800 px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-blue-600"
+                            value={col.label}
+                            onChange={(e) => renameColumn(col.columnId, e.target.value)}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeColumn(col.columnId)}
+                            className="text-neutral-500 hover:text-red-400"
+                            title="Remove column"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        col.label
+                      )}
                     </th>
                   ))}
-                  <th className="border-b border-neutral-800 px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={addColumn}
-                      className="flex items-center gap-1 text-neutral-400 hover:text-neutral-200"
-                    >
-                      <Plus className="h-4 w-4" /> Column
-                    </button>
-                  </th>
+                  {canEdit && (
+                    <th className="border-b border-neutral-800 px-3 py-2">
+                      <button
+                        type="button"
+                        onClick={addColumn}
+                        className="flex items-center gap-1 text-neutral-400 hover:text-neutral-200"
+                      >
+                        <Plus className="h-4 w-4" /> Column
+                      </button>
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {schedule.rows.map((row) => (
                   <tr key={row.rowId} className="border-b border-neutral-800">
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-1">
-                        <input
-                          className="w-36 rounded bg-neutral-800 px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-blue-600"
-                          value={row.label}
-                          onChange={(e) => renameRow(row.rowId, e.target.value)}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeRow(row.rowId)}
-                          className="text-neutral-500 hover:text-red-400"
-                          title="Remove row"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                    <td className="px-3 py-2 align-top">
+                      {canEdit ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            className="w-36 rounded bg-neutral-800 px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-blue-600"
+                            value={row.label}
+                            onChange={(e) => renameRow(row.rowId, e.target.value)}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeRow(row.rowId)}
+                            className="text-neutral-500 hover:text-red-400"
+                            title="Remove row"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        row.label
+                      )}
                     </td>
                     {schedule.columns.map((col) => (
-                      <td key={col.columnId} className="px-3 py-2">
-                        <input
-                          className="w-32 rounded bg-neutral-800 px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-blue-600"
-                          placeholder="Name / time"
-                          value={row.cells[col.columnId] ?? ""}
-                          onChange={(e) =>
-                            updateCell(row.rowId, col.columnId, e.target.value)
+                      <td key={col.columnId} className="px-3 py-2 align-top">
+                        <CellAssignments
+                          assignments={row.cells[col.columnId] ?? []}
+                          employees={employees}
+                          editable={canEdit}
+                          onAdd={(employee) =>
+                            addAssignment(row.rowId, col.columnId, employee)
+                          }
+                          onRemove={(employeeId) =>
+                            removeAssignment(row.rowId, col.columnId, employeeId)
                           }
                         />
                       </td>
                     ))}
-                    <td />
+                    {canEdit && <td />}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
 
-          <div className="flex flex-wrap items-center gap-4">
-            <button
-              type="button"
-              onClick={addRow}
-              className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
-            >
-              <Plus className="h-4 w-4" /> Add row
-            </button>
+          {canEdit && (
+            <div className="flex flex-wrap items-center gap-4">
+              <button
+                type="button"
+                onClick={addRow}
+                className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
+              >
+                <Plus className="h-4 w-4" /> Add row
+              </button>
 
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={!dirty || saving}
+                className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-medium text-white disabled:cursor-not-allowed disabled:bg-neutral-700"
+              >
+                {saving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                {dirty ? "Save changes" : "Saved"}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function CellAssignments({
+  assignments,
+  employees,
+  editable,
+  onAdd,
+  onRemove,
+}: {
+  assignments: ScheduleAssignment[];
+  employees: Employee[];
+  editable: boolean;
+  onAdd: (employee: Employee) => void;
+  onRemove: (employeeId: string) => void;
+}) {
+  const assignedIds = new Set(assignments.map((a) => a.employeeId));
+  const available = employees
+    .filter((e) => e.active && !assignedIds.has(e.employeeId))
+    .sort((a, b) => a.fullName.localeCompare(b.fullName));
+
+  return (
+    <div className="flex min-w-[160px] flex-col gap-1">
+      {assignments.length === 0 && !editable && (
+        <span className="text-neutral-600">—</span>
+      )}
+      {assignments.map((a) => (
+        <span
+          key={a.employeeId}
+          className="flex items-center justify-between gap-2 rounded bg-neutral-800 px-2 py-1 text-xs"
+        >
+          {a.employeeName}
+          {editable && (
             <button
               type="button"
-              onClick={handleSave}
-              disabled={!dirty || saving}
-              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-medium text-white disabled:cursor-not-allowed disabled:bg-neutral-700"
+              onClick={() => onRemove(a.employeeId)}
+              className="text-neutral-500 hover:text-red-400"
+              title="Remove"
             >
-              {saving ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4" />
-              )}
-              {dirty ? "Save changes" : "Saved"}
+              <X className="h-3 w-3" />
             </button>
-          </div>
-        </>
+          )}
+        </span>
+      ))}
+      {editable && available.length > 0 && (
+        <select
+          value=""
+          onChange={(e) => {
+            const employee = available.find((emp) => emp.employeeId === e.target.value);
+            if (employee) onAdd(employee);
+          }}
+          className="rounded bg-neutral-800/60 px-2 py-1 text-xs text-neutral-400 outline-none focus:ring-2 focus:ring-blue-600"
+        >
+          <option value="">+ Add employee</option>
+          {available.map((emp) => (
+            <option key={emp.employeeId} value={emp.employeeId}>
+              {emp.fullName}
+            </option>
+          ))}
+        </select>
       )}
     </div>
   );

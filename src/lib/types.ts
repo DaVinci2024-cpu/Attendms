@@ -74,19 +74,27 @@ export interface SuspiciousEvent {
 }
 
 // A spreadsheet-style weekly schedule: rows are days, columns are
-// admin-defined time blocks, and each cell is free text (typically an
-// employee name) — both rows and columns can be renamed, added, or
-// removed, so this deliberately doesn't model shifts as structured
-// per-employee records.
+// admin-defined time blocks (both renameable/addable/removable), and each
+// cell holds zero or more real employees assigned to that day+block —
+// picked from the employee list, not typed as free text, so a cell can
+// have multiple people covering the same slot.
 export interface ScheduleColumn {
   columnId: string;
   label: string;
 }
 
+// employeeName is denormalized (copied in at assignment time) purely for
+// display without an extra employee lookup per cell — it isn't kept in
+// sync if the employee is later renamed.
+export interface ScheduleAssignment {
+  employeeId: string;
+  employeeName: string;
+}
+
 export interface ScheduleRow {
   rowId: string;
   label: string;
-  cells: Record<string, string>; // keyed by columnId
+  cells: Record<string, ScheduleAssignment[]>; // keyed by columnId
 }
 
 export interface WeekSchedule {
