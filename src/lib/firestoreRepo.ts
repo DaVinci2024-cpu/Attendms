@@ -8,6 +8,7 @@ import {
   query,
   where,
   limit,
+  orderBy,
   updateDoc,
   arrayUnion,
   type CollectionReference,
@@ -25,6 +26,7 @@ import type {
   KioskDisplaySettings,
   AuthPolicy,
   PermissionGrant,
+  Announcement,
 } from "./types";
 
 function companyDoc() {
@@ -61,6 +63,10 @@ function authPolicyDoc() {
 
 function permissionsCol(): CollectionReference {
   return collection(getDb(), "companies", COMPANY_ID, "permissions");
+}
+
+function announcementsCol(): CollectionReference {
+  return collection(getDb(), "companies", COMPANY_ID, "announcements");
 }
 
 // Called once the admin is signed in (rules require auth to write the
@@ -305,4 +311,20 @@ export async function closeShift(
   };
   await setDoc(doc(attendanceCol(), log.logId), log);
   return log;
+}
+
+// Most recent first. limitCount keeps the portal/admin feed from pulling
+// the whole history every load — older announcements just scroll off.
+export async function fetchAnnouncements(limitCount = 20): Promise<Announcement[]> {
+  const q = query(announcementsCol(), orderBy("postedAt", "desc"), limit(limitCount));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((d) => d.data() as Announcement);
+}
+
+export async function postAnnouncement(announcement: Announcement): Promise<void> {
+  await setDoc(doc(announcementsCol(), announcement.announcementId), announcement);
+}
+
+export async function deleteAnnouncement(announcementId: string): Promise<void> {
+  await deleteDoc(doc(announcementsCol(), announcementId));
 }

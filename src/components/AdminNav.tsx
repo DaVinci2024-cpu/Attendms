@@ -6,6 +6,7 @@ import {
   CalendarDays,
   Home,
   LayoutDashboard,
+  Megaphone,
   ScanFace,
   Settings,
   ShieldCheck,
@@ -59,6 +60,12 @@ const LINKS: NavLink[] = [
     label: "Roles",
     icon: ShieldCheck,
     visible: (has) => has("manage_permissions"),
+  },
+  {
+    href: "/admin/announcements",
+    label: "Announcements",
+    icon: Megaphone,
+    visible: (has) => has("manage_announcements"),
   },
 ];
 

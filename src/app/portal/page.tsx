@@ -8,11 +8,12 @@ import {
   updatePassword,
   type User,
 } from "firebase/auth";
-import { ChevronLeft, ChevronRight, LogOut, Loader2, Printer } from "lucide-react";
+import { ChevronLeft, ChevronRight, LogOut, Loader2, Megaphone, Printer } from "lucide-react";
 import { SchedulePrintView } from "@/components/SchedulePrintView";
 import { getAuthClient } from "@/lib/auth";
 import {
   clearMustChangePassword,
+  fetchAnnouncements,
   fetchAttendanceForEmployee,
   fetchEmployeeByAuthUid,
   fetchScheduleColumnTemplate,
@@ -21,7 +22,7 @@ import {
 import { pairSessions, formatDuration } from "@/lib/hours";
 import { cellAssignments } from "@/lib/schedule";
 import { mondayOf, toWeekId } from "@/lib/week";
-import type { AttendanceLog, Employee, WeekSchedule } from "@/lib/types";
+import type { Announcement, AttendanceLog, Employee, WeekSchedule } from "@/lib/types";
 
 export default function PortalPage() {
   const router = useRouter();
@@ -186,6 +187,7 @@ function localTime(iso: string): string {
 
 function PortalDashboard({ employee }: { employee: Employee }) {
   const [logs, setLogs] = useState<AttendanceLog[] | null>(null);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
   const [schedule, setSchedule] = useState<WeekSchedule | null>(null);
   const [scheduleLoading, setScheduleLoading] = useState(true);
@@ -206,6 +208,20 @@ function PortalDashboard({ employee }: { employee: Employee }) {
       cancelled = true;
     };
   }, [employee.employeeId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAnnouncements(5)
+      .then((list) => {
+        if (!cancelled) setAnnouncements(list);
+      })
+      .catch(() => {
+        // Non-critical — the rest of the portal still works without it.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const weekId = toWeekId(weekStart);
 
@@ -277,6 +293,22 @@ function PortalDashboard({ employee }: { employee: Employee }) {
       </div>
 
       {error && <p className="text-sm text-red-400">{error}</p>}
+
+      {announcements.length > 0 && (
+        <section className="flex flex-col gap-2 rounded-xl bg-neutral-900 p-4">
+          <h2 className="flex items-center gap-2 font-medium">
+            <Megaphone className="h-4 w-4 text-amber-400" /> Announcements
+          </h2>
+          {announcements.map((a) => (
+            <div key={a.announcementId} className="rounded-lg bg-neutral-800/60 px-3 py-2">
+              <p className="text-sm">{a.message}</p>
+              <p className="mt-1 text-xs text-neutral-500">
+                {a.postedByName} · {new Date(a.postedAt).toLocaleString()}
+              </p>
+            </div>
+          ))}
+        </section>
+      )}
 
       {logs === null ? (
         <div className="flex justify-center py-10">

@@ -168,7 +168,8 @@ export type Permission =
   | "edit_attendance"
   | "manage_kiosk_settings"
   | "view_reports"
-  | "manage_permissions";
+  | "manage_permissions"
+  | "manage_announcements";
 
 export interface PermissionGrant {
   uid: string;
@@ -185,4 +186,15 @@ export interface Kiosk {
   pairedAt: string;
   lastSeenAt: string;
   active: boolean;
+}
+
+// One-way admin -> employee updates shown in the employee portal (e.g.
+// "staff meeting Friday at 3pm"). Deliberately a plain feed, not a chat —
+// only manage_announcements holders can post, everyone signed in can read.
+export interface Announcement {
+  announcementId: string;
+  message: string;
+  postedBy: string; // uid
+  postedByName: string;
+  postedAt: string; // ISO
 }

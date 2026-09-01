@@ -16,6 +16,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   manage_kiosk_settings: "Manage kiosk display",
   view_reports: "View reports",
   manage_permissions: "Manage roles & permissions",
+  manage_announcements: "Post announcements",
 };
 
 export const ALL_PERMISSIONS: Permission[] = [
@@ -25,4 +26,5 @@ export const ALL_PERMISSIONS: Permission[] = [
   "manage_kiosk_settings",
   "view_reports",
   "manage_permissions",
+  "manage_announcements",
 ];
