@@ -8,7 +8,7 @@ import {
   updatePassword,
   type User,
 } from "firebase/auth";
-import { LogOut, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, LogOut, Loader2 } from "lucide-react";
 import { getAuthClient } from "@/lib/auth";
 import {
   clearMustChangePassword,
@@ -185,28 +185,16 @@ function localTime(iso: string): string {
 
 function PortalDashboard({ employee }: { employee: Employee }) {
   const [logs, setLogs] = useState<AttendanceLog[] | null>(null);
+  const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
   const [schedule, setSchedule] = useState<WeekSchedule | null>(null);
+  const [scheduleLoading, setScheduleLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    const weekId = toWeekId(mondayOf(new Date()));
-    Promise.all([
-      fetchAttendanceForEmployee(employee.employeeId),
-      fetchWeekSchedule(weekId),
-      fetchScheduleColumnTemplate(),
-    ])
-      .then(([attendance, week, template]) => {
-        if (cancelled) return;
-        setLogs(attendance);
-        // A week not split off into its own columns always follows the
-        // current standard set, even if this week's own doc hasn't been
-        // re-saved since the standard columns last changed.
-        setSchedule(
-          week && !week.customColumns && template
-            ? { ...week, columns: template.columns }
-            : week
-        );
+    fetchAttendanceForEmployee(employee.employeeId)
+      .then((attendance) => {
+        if (!cancelled) setLogs(attendance);
       })
       .catch((err) => {
         if (!cancelled) {
@@ -217,6 +205,53 @@ function PortalDashboard({ employee }: { employee: Employee }) {
       cancelled = true;
     };
   }, [employee.employeeId]);
+
+  const weekId = toWeekId(weekStart);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSchedule() {
+      setScheduleLoading(true);
+      try {
+        const [week, template] = await Promise.all([
+          fetchWeekSchedule(weekId),
+          fetchScheduleColumnTemplate(),
+        ]);
+        if (cancelled) return;
+        // A week not split off into its own columns always follows the
+        // current standard set, even if this week's own doc hasn't been
+        // re-saved since the standard columns last changed.
+        setSchedule(
+          week && !week.customColumns && template
+            ? { ...week, columns: template.columns }
+            : week
+        );
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load schedule");
+        }
+      } finally {
+        if (!cancelled) setScheduleLoading(false);
+      }
+    }
+
+    loadSchedule();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [weekId]);
+
+  function goToWeek(offsetWeeks: number) {
+    setWeekStart((prev) => {
+      const next = new Date(prev);
+      next.setDate(next.getDate() + offsetWeeks * 7);
+      return mondayOf(next);
+    });
+  }
+
+  const thisWeekId = toWeekId(mondayOf(new Date()));
 
   const sessions = logs ? pairSessions(logs) : [];
   const totalMs = sessions.reduce((sum, s) => sum + (s.durationMs ?? 0), 0);
@@ -293,8 +328,35 @@ function PortalDashboard({ employee }: { employee: Employee }) {
           </section>
 
           <section className="rounded-xl bg-neutral-900 p-4">
-            <h2 className="mb-2 font-medium">This week&apos;s schedule</h2>
-            {!schedule ? (
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-medium">
+                {weekId === thisWeekId ? "This week's schedule" : "Schedule"}
+              </h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => goToWeek(-1)}
+                  className="rounded-lg bg-neutral-800 p-1.5 hover:bg-neutral-700"
+                  title="Previous week"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span className="text-xs text-neutral-400">Week of {weekId}</span>
+                <button
+                  type="button"
+                  onClick={() => goToWeek(1)}
+                  className="rounded-lg bg-neutral-800 p-1.5 hover:bg-neutral-700"
+                  title="Next week"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            {scheduleLoading ? (
+              <div className="flex justify-center py-6">
+                <Loader2 className="h-5 w-5 animate-spin text-neutral-400" />
+              </div>
+            ) : !schedule ? (
               <p className="text-sm text-neutral-400">
                 No schedule posted for this week yet.
               </p>
