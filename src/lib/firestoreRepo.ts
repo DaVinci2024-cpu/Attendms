@@ -212,6 +212,20 @@ export async function recordPunch(log: AttendanceLog): Promise<void> {
   await setDoc(doc(attendanceCol(), log.logId), log);
 }
 
+// Used by the kiosk (never signed in) to check whether an employee is
+// already clocked in, and to read the scheduled shift end stamped on
+// their open punch_in for the early-punch-out check. Sorts client-side
+// rather than adding `orderBy` so this stays a single-field `where`
+// query — no composite index needed, same reasoning as
+// fetchAttendanceForEmployee above.
+export async function fetchLastAttendanceForEmployee(
+  employeeId: string
+): Promise<AttendanceLog | null> {
+  const logs = await fetchAttendanceForEmployee(employeeId);
+  if (logs.length === 0) return null;
+  return logs.reduce((latest, log) => (log.timestamp > latest.timestamp ? log : latest));
+}
+
 export async function recordSuspiciousEvent(
   event: SuspiciousEvent
 ): Promise<void> {

@@ -9,12 +9,16 @@ rules_version = '2';
 // Firestore Database -> Rules -> Publish.
 //
 // Known, accepted tradeoff: the kiosk has no login of its own, so
-// `employees` (including face descriptors) must stay world-readable for
-// the offline-matching architecture to work at all — anyone who obtains
-// this project's public web config can read every employee's descriptors
-// and the (hashed) PIN/portal-account fields. Physical security of the
-// kiosk device and restricting who gets the Firebase config are the real
-// mitigations here, not this rules file.
+// `employees` (including face descriptors), `schedules`, and `attendance`
+// must all stay world-readable — the punch-rules feature needs the kiosk
+// to check the current week's schedule (is this person actually
+// scheduled right now?) and an employee's last punch (are they already
+// clocked in? what time does their shift end?) without ever signing in.
+// Anyone who obtains this project's public web config can read every
+// employee's descriptors and hashed PIN, the full schedule, and every
+// attendance timestamp. Physical security of the kiosk device and
+// restricting who gets the Firebase config are the real mitigations
+// here, not this rules file.
 service cloud.firestore {
   match /databases/{database}/documents {
     match /companies/{companyId} {
@@ -90,17 +94,13 @@ service cloud.firestore {
 
       // Attendance is created by the kiosk without signing in and is
       // otherwise append-only — a correction adds an entry to edits[]
-      // rather than silently overwriting history. An employee can read
-      // their own punches (matched by their linked employee doc's
-      // authUid); admin/edit_attendance holders can read everyone's.
+      // rather than silently overwriting history. World-readable so the
+      // kiosk itself can check whether an employee is already clocked in
+      // and read the scheduled end time on their open punch_in (see the
+      // tradeoff note at the top of this file).
       match /attendance/{logId} {
         allow create: if true;
-        allow read: if isAdmin() ||
-          hasPermission("view_reports") ||
-          hasPermission("edit_attendance") || (
-          request.auth != null &&
-          get(/databases/$(database)/documents/companies/$(companyId)/employees/$(resource.data.employeeId)).data.authUid == request.auth.uid
-        );
+        allow read: if true;
         // A correction must be made by someone holding edit_attendance,
         // and must append exactly one new entry to edits[] — no editing
         // or deleting prior history, and no changing fields other than
@@ -119,11 +119,11 @@ service cloud.firestore {
       }
 
       // One document per week (weekId = that week's Monday), holding the
-      // whole spreadsheet-style grid. Readable by any signed-in user
-      // (admin or any employee with a portal account) the same way a
-      // printed schedule posted in a break room would be.
+      // whole spreadsheet-style grid. World-readable — the kiosk needs it
+      // to check whether whoever's punching is actually scheduled right
+      // now, the same tradeoff as employees/attendance above.
       match /schedules/{weekId} {
-        allow read: if request.auth != null;
+        allow read: if true;
         allow write: if hasPermission("manage_schedule");
       }
 

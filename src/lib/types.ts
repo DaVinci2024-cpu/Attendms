@@ -56,6 +56,17 @@ export interface AttendanceEdit {
   previousType: PunchType | null;
 }
 
+// Stamped on a punch that only went through because a shift supervisor
+// approved it at the kiosk (late, unscheduled, or an early punch-out) —
+// name/time/reason kept directly on the record, not just implied by who
+// signed in, since the kiosk itself never signs in.
+export interface AttendanceOverride {
+  reason: string;
+  supervisorEmployeeId: string;
+  supervisorName: string;
+  overriddenAt: string; // ISO
+}
+
 export interface AttendanceLog {
   logId: string;
   employeeId: string;
@@ -67,6 +78,17 @@ export interface AttendanceLog {
   kioskId: string;
   syncedOffline: boolean;
   edits?: AttendanceEdit[];
+  // Set on a punch_in resolved against a timed shift, so the matching
+  // punch_out can check the early-leave window without re-deriving which
+  // shift it was (an employee can have more than one shift in a day).
+  // null/absent when the shift they clocked into has no end time set.
+  scheduledShiftEnd?: string | null;
+  // The supervisor designated for that same shift — carried onto the
+  // punch_in specifically so an early punch-out later knows who to route
+  // an override to, without re-reading that day's schedule.
+  scheduledSupervisorEmployeeId?: string | null;
+  scheduledSupervisorName?: string | null;
+  override?: AttendanceOverride;
 }
 
 export interface SuspiciousEvent {

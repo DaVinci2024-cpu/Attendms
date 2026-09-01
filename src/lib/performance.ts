@@ -7,6 +7,11 @@ import type { AttendanceLog, Employee, WeekSchedule } from "./types";
 // up to 30 points even with perfect attendance.
 const EDIT_PENALTY_WEIGHT = 0.3;
 
+// A supervisor override (late, unscheduled, or an early punch-out caught
+// at the kiosk itself) weighs a bit more than a routine after-the-fact
+// correction — it's a live incident, not just a records fix.
+const OVERRIDE_PENALTY_WEIGHT = 0.4;
+
 export interface EmployeePerformance {
   employeeId: string;
   employeeName: string;
@@ -15,6 +20,7 @@ export interface EmployeePerformance {
   missedDays: number;
   sessionsWorked: number; // total punch_ins in the period, schedule or not
   editsCount: number; // total correction events across their records
+  overridesCount: number; // punches that needed a supervisor override at the kiosk
   attendanceRate: number | null; // 0-100; null if never scheduled this period
   score: number | null; // 0-100; null if never scheduled this period
 }
@@ -58,6 +64,7 @@ export function computeEmployeePerformance(
   const workedByDate = new Map<string, Set<string>>();
   const sessionsWorked = new Map<string, number>();
   const editsCount = new Map<string, number>();
+  const overridesCount = new Map<string, number>();
   for (const log of attendanceLogs) {
     if (log.type === "punch_in") {
       const dateKey = toWeekId(new Date(log.timestamp));
@@ -75,6 +82,9 @@ export function computeEmployeePerformance(
         (editsCount.get(log.employeeId) ?? 0) + log.edits.length
       );
     }
+    if (log.override) {
+      overridesCount.set(log.employeeId, (overridesCount.get(log.employeeId) ?? 0) + 1);
+    }
   }
 
   return employees.map((emp) => {
@@ -88,12 +98,22 @@ export function computeEmployeePerformance(
 
     const sessions = sessionsWorked.get(emp.employeeId) ?? 0;
     const edits = editsCount.get(emp.employeeId) ?? 0;
+    const overrides = overridesCount.get(emp.employeeId) ?? 0;
     const attendanceRate = scheduledDays > 0 ? (workedDays / scheduledDays) * 100 : null;
     const editRate = sessions > 0 ? edits / sessions : 0;
+    const overrideRate = sessions > 0 ? overrides / sessions : 0;
     const score =
       attendanceRate === null
         ? null
-        : Math.max(0, Math.min(100, attendanceRate - editRate * 100 * EDIT_PENALTY_WEIGHT));
+        : Math.max(
+            0,
+            Math.min(
+              100,
+              attendanceRate -
+                editRate * 100 * EDIT_PENALTY_WEIGHT -
+                overrideRate * 100 * OVERRIDE_PENALTY_WEIGHT
+            )
+          );
 
     return {
       employeeId: emp.employeeId,
@@ -103,6 +123,7 @@ export function computeEmployeePerformance(
       missedDays: scheduledDays - workedDays,
       sessionsWorked: sessions,
       editsCount: edits,
+      overridesCount: overrides,
       attendanceRate,
       score,
     };

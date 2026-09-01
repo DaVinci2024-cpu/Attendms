@@ -25,6 +25,14 @@ export const MAX_PIN_ATTEMPTS = 3;
 // How often (ms) the kiosk detection loop runs face detection.
 export const DETECTION_INTERVAL_MS = 700;
 
+// How late (ms past a shift's start time) a self punch-in is still
+// accepted without a supervisor override.
+export const LATE_PUNCH_IN_GRACE_MS = 15 * 60 * 1000;
+
+// How early (ms before a shift's end time) a self punch-out is still
+// accepted without a supervisor override.
+export const EARLY_PUNCH_OUT_GRACE_MS = 60 * 60 * 1000;
+
 // Employees don't have real work emails, so the portal login uses a
 // synthetic, non-deliverable email under this fake domain — Firebase Auth
 // requires an email-shaped identifier even though nothing is ever sent to

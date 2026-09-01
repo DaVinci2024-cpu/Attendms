@@ -4,11 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   LayoutDashboard,
+  Loader2,
   LogIn,
   LogOut,
   Megaphone,
   Search,
   ShieldAlert,
+  ShieldCheck,
   UserCheck,
   Users,
   WifiOff,
@@ -26,9 +28,19 @@ import {
   fetchAllEmployees,
   fetchAuthPolicy,
   fetchKioskDisplaySettings,
+  fetchLastAttendanceForEmployee,
+  fetchWeekSchedule,
   recordPunch,
   recordSuspiciousEvent,
 } from "@/lib/firestoreRepo";
+import {
+  findCurrentSupervisor,
+  isEarlyPunchOut,
+  isPunchInAllowed,
+  resolveShiftForPunchIn,
+  type ResolvedShift,
+} from "@/lib/punchRules";
+import { mondayOf, toWeekId } from "@/lib/week";
 import {
   COMPANY_NAME,
   KIOSK_ID,
@@ -36,13 +48,24 @@ import {
   MAX_PIN_ATTEMPTS,
   PUNCH_DEBOUNCE_MS,
 } from "@/lib/constants";
-import type { AttendanceLog, AuthMethod, Employee, PunchType } from "@/lib/types";
+import type {
+  AttendanceLog,
+  AttendanceOverride,
+  AuthMethod,
+  Employee,
+  PunchType,
+  ShiftSupervisor,
+  WeekSchedule,
+} from "@/lib/types";
 
 type KioskStatus =
   | "idle"
   | "scanning"
   | "select_employee"
   | "pin_entry"
+  | "blocked"
+  | "supervisor_pin"
+  | "override_reason"
   | "success"
   | "suspicious";
 
@@ -63,10 +86,15 @@ export default function Home() {
   const [status, setStatus] = useState<KioskStatus>("idle");
   const [authMethod, setAuthMethod] = useState<AuthMethod>("face_and_pin");
   // The camera should only ever run while actually face-scanning — never
-  // on the idle screen, never during the PIN-only name picker, and never
-  // at all in pin_only mode.
+  // on the idle screen, the PIN-only name picker, the punch-rules screens,
+  // and never at all in pin_only mode.
   const usingCamera =
-    authMethod !== "pin_only" && status !== "idle" && status !== "select_employee";
+    authMethod !== "pin_only" &&
+    status !== "idle" &&
+    status !== "select_employee" &&
+    status !== "blocked" &&
+    status !== "supervisor_pin" &&
+    status !== "override_reason";
   const {
     videoRef,
     ready: cameraReady,
@@ -75,15 +103,14 @@ export default function Home() {
   const { loaded: modelsLoaded, error: modelsError } = useFaceModels();
 
   const [employees, setEmployees] = useState<Employee[]>([]);
-  // Deliberately local/session-only, not fetched from Firestore: the
-  // `attendance` collection requires a signed-in reader (admin, or an
-  // employee reading their own history via the portal) so employees can't
-  // see each other's punch history there — the kiosk itself never signs
-  // in, so it can't read attendance either. This only ever grows from
-  // punches this kiosk records itself, which is enough for the
-  // worked-hours display on punch-out; it doesn't need to be a complete
-  // history of that employee's attendance.
+  // Deliberately local/session-only, not fetched from Firestore on a
+  // schedule: this only ever grows from punches this kiosk records itself,
+  // enough for the worked-hours display on punch-out. The punch-rules
+  // checks below read the authoritative record from Firestore instead
+  // (attendance is world-readable specifically so the kiosk, which never
+  // signs in, can check it — see firestore.rules).
   const [attendanceLogs, setAttendanceLogs] = useState<AttendanceLog[]>([]);
+  const [schedule, setSchedule] = useState<WeekSchedule | null>(null);
   const [online, setOnline] = useState(
     () => typeof navigator === "undefined" || navigator.onLine
   );
@@ -100,6 +127,20 @@ export default function Home() {
   const [pinError, setPinError] = useState<string | null>(null);
   const [verifyingPin, setVerifyingPin] = useState(false);
   const [successInfo, setSuccessInfo] = useState<SuccessInfo | null>(null);
+
+  // Punch-rules override flow state.
+  const [blockedReason, setBlockedReason] = useState<string | null>(null);
+  // Whether this block even has a supervisor-override path at all — the
+  // "already on duty" block doesn't (that's a data-integrity guard, not
+  // something a supervisor should paper over at the kiosk).
+  const [overridable, setOverridable] = useState(false);
+  const [requiredSupervisor, setRequiredSupervisor] = useState<ShiftSupervisor | null>(null);
+  const [pendingShift, setPendingShift] = useState<ResolvedShift | null>(null);
+  const [supervisorPin, setSupervisorPin] = useState("");
+  const [supervisorPinError, setSupervisorPinError] = useState<string | null>(null);
+  const [verifyingSupervisorPin, setVerifyingSupervisorPin] = useState(false);
+  const [overrideReasonText, setOverrideReasonText] = useState("");
+  const [submittingOverride, setSubmittingOverride] = useState(false);
 
   const debounceUntilRef = useRef<Map<string, number>>(new Map());
   const pinAttemptsRef = useRef<Map<string, number>>(new Map());
@@ -126,16 +167,22 @@ export default function Home() {
         );
       }
     }
+
+    try {
+      setSchedule(await fetchWeekSchedule(toWeekId(mondayOf(new Date()))));
+    } catch {
+      // Non-critical for a refresh — punch-rule checks just fall back to
+      // whatever schedule was last loaded successfully.
+    }
   }, []);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadInitialData() {
-      // Fetched separately (not Promise.all'd) so a failure in the
-      // non-critical display-settings read can never mask, or be masked
-      // by, the employees read that the kiosk actually depends on — and
-      // so the error banner names which one actually failed.
+      // Fetched separately (not Promise.all'd) so a failure in one
+      // non-critical read can never mask, or be masked by, another —
+      // and so the error banner names which one actually failed.
       try {
         const emps = await fetchAllEmployees();
         if (cancelled) return;
@@ -167,6 +214,15 @@ export default function Home() {
       } catch (err) {
         if (cancelled || !navigator.onLine) return;
         console.error("Failed to load auth policy:", err);
+      }
+
+      try {
+        const weekSchedule = await fetchWeekSchedule(toWeekId(mondayOf(new Date())));
+        if (cancelled) return;
+        setSchedule(weekSchedule);
+      } catch (err) {
+        if (cancelled || !navigator.onLine) return;
+        console.error("Failed to load schedule:", err);
       }
     }
 
@@ -259,10 +315,10 @@ export default function Home() {
     setScanHint(null);
     setEmployeeSearch("");
     setStatus(authMethod === "pin_only" ? "select_employee" : "scanning");
-    // Refresh employees/attendance right as a punch starts, so a kiosk
-    // tab left open for a while still sees anyone enrolled since it loaded
-    // (camera/model startup gives this a moment to land before scanning
-    // actually needs it).
+    // Refresh employees/schedule right as a punch starts, so a kiosk tab
+    // left open for a while still sees anyone enrolled and today's
+    // current schedule (camera/model startup gives this a moment to land
+    // before scanning actually needs it).
     refreshData();
   }
 
@@ -279,14 +335,27 @@ export default function Home() {
     setStatus("pin_entry");
   }
 
-  function backToIdle() {
-    setScanHint(null);
+  // Clears everything about the in-progress punch attempt, but leaves
+  // `status` alone — callers decide what screen comes next.
+  function clearPunchFields() {
     setIntent(null);
     setCandidate(null);
     setSelectedEmployee(null);
-    setEmployeeSearch("");
     setPin("");
     setPinError(null);
+    setBlockedReason(null);
+    setOverridable(false);
+    setRequiredSupervisor(null);
+    setPendingShift(null);
+    setSupervisorPin("");
+    setSupervisorPinError(null);
+    setOverrideReasonText("");
+  }
+
+  function backToIdle() {
+    setScanHint(null);
+    setEmployeeSearch("");
+    clearPunchFields();
     setStatus("idle");
   }
 
@@ -330,8 +399,139 @@ export default function Home() {
       return;
     }
 
-    const punchType = intent;
+    await evaluateAndFinalize(employee, intent);
+  }
 
+  // Checks whether this punch is actually allowed to happen right now
+  // (not already on duty, scheduled and on time for punch-in, not too
+  // early to punch out) and either finalizes it or routes to the
+  // supervisor-override screens.
+  async function evaluateAndFinalize(employee: Employee, punchType: PunchType) {
+    const now = new Date();
+
+    let lastLog: AttendanceLog | null = null;
+    try {
+      lastLog = await fetchLastAttendanceForEmployee(employee.employeeId);
+    } catch {
+      // Offline or the read failed — fall back to this kiosk's own local
+      // session history rather than blocking the punch outright.
+      const [localLast] = attendanceLogs
+        .filter((l) => l.employeeId === employee.employeeId)
+        .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      lastLog = localLast ?? null;
+    }
+
+    if (punchType === "punch_in") {
+      if (lastLog?.type === "punch_in") {
+        setBlockedReason(`${employee.fullName} is already on duty.`);
+        setOverridable(false);
+        setStatus("blocked");
+        return;
+      }
+
+      // No schedule posted for this week at all — nothing to check
+      // against, so don't block (same as before this feature existed).
+      if (!schedule) {
+        finalizePunch(employee, punchType, null, null);
+        return;
+      }
+
+      const resolution = resolveShiftForPunchIn(
+        schedule,
+        mondayOf(now),
+        employee.employeeId,
+        now
+      );
+      if (isPunchInAllowed(resolution)) {
+        finalizePunch(employee, punchType, resolution, null);
+        return;
+      }
+
+      const supervisor = resolution
+        ? resolution.supervisor
+        : findCurrentSupervisor(schedule, mondayOf(now), now);
+      setPendingShift(resolution);
+      setRequiredSupervisor(supervisor);
+      setOverridable(true);
+      setBlockedReason(
+        resolution
+          ? `You're more than 15 minutes late for ${resolution.columnLabel}.`
+          : "You're not scheduled to work today."
+      );
+      setStatus("blocked");
+      return;
+    }
+
+    // Punch out.
+    if (lastLog && isEarlyPunchOut(lastLog.scheduledShiftEnd, now)) {
+      const supervisor: ShiftSupervisor | null = lastLog.scheduledSupervisorEmployeeId
+        ? {
+            employeeId: lastLog.scheduledSupervisorEmployeeId,
+            employeeName: lastLog.scheduledSupervisorName ?? "Supervisor",
+          }
+        : null;
+      setPendingShift(null);
+      setRequiredSupervisor(supervisor);
+      setOverridable(true);
+      setBlockedReason("It's more than an hour before your shift ends.");
+      setStatus("blocked");
+      return;
+    }
+
+    finalizePunch(employee, punchType, null, null);
+  }
+
+  async function handleSupervisorPinSubmit() {
+    if (!requiredSupervisor) return;
+    const supervisorEmployee = employees.find(
+      (e) => e.employeeId === requiredSupervisor.employeeId
+    );
+    if (!supervisorEmployee) {
+      setSupervisorPinError("Supervisor record not found — try refreshing.");
+      return;
+    }
+
+    setVerifyingSupervisorPin(true);
+    const correct = await verifyPin(
+      supervisorPin,
+      supervisorEmployee.pinSalt,
+      supervisorEmployee.pinHash
+    );
+    setVerifyingSupervisorPin(false);
+
+    if (!correct) {
+      setSupervisorPinError("Incorrect PIN.");
+      setSupervisorPin("");
+      return;
+    }
+
+    setSupervisorPin("");
+    setSupervisorPinError(null);
+    setStatus("override_reason");
+  }
+
+  function handleConfirmOverride() {
+    const employee = candidate?.employee ?? selectedEmployee;
+    const reason = overrideReasonText.trim();
+    if (!employee || !intent || !requiredSupervisor || !reason) return;
+
+    setSubmittingOverride(true);
+    const override: AttendanceOverride = {
+      reason,
+      supervisorEmployeeId: requiredSupervisor.employeeId,
+      supervisorName: requiredSupervisor.employeeName,
+      overriddenAt: new Date().toISOString(),
+    };
+    finalizePunch(employee, intent, pendingShift, override);
+    setSubmittingOverride(false);
+  }
+
+  function finalizePunch(
+    employee: Employee,
+    punchType: PunchType,
+    resolution: ResolvedShift | null,
+    override: AttendanceOverride | null
+  ) {
     // On punch-out, find the matching punch-in for this shift (the most
     // recent prior log for this employee) to show how long they worked.
     let durationLabel: string | undefined;
@@ -356,6 +556,14 @@ export default function Home() {
       pinConfirmed: true,
       kioskId: KIOSK_ID,
       syncedOffline: !online,
+      ...(punchType === "punch_in"
+        ? {
+            scheduledShiftEnd: resolution?.scheduledEndIso ?? null,
+            scheduledSupervisorEmployeeId: resolution?.supervisor?.employeeId ?? null,
+            scheduledSupervisorName: resolution?.supervisor?.employeeName ?? null,
+          }
+        : {}),
+      ...(override ? { override } : {}),
     };
 
     // Same reasoning as above: don't block the success screen on a network
@@ -370,10 +578,7 @@ export default function Home() {
     playChime("success");
     setSuccessInfo({ employeeName: employee.fullName, punchType, durationLabel });
     setStatus("success");
-    setCandidate(null);
-    setSelectedEmployee(null);
-    setPin("");
-    setIntent(null);
+    clearPunchFields();
 
     setTimeout(() => {
       setSuccessInfo(null);
@@ -553,6 +758,96 @@ export default function Home() {
                     className="text-sm text-neutral-400 hover:text-neutral-200"
                   >
                     Not you? Cancel
+                  </button>
+                </div>
+              )}
+
+              {status === "blocked" && (
+                <div className="flex flex-col items-center gap-3 rounded-xl bg-amber-950/40 p-6 text-center">
+                  <ShieldAlert className="h-10 w-10 text-amber-400" />
+                  <p className="text-lg font-medium text-amber-200">{blockedReason}</p>
+                  {overridable && requiredSupervisor && (
+                    <>
+                      <p className="text-sm text-neutral-400">
+                        Ask {requiredSupervisor.employeeName} to approve this at the kiosk.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setStatus("supervisor_pin")}
+                        className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-3 font-medium text-white hover:bg-blue-500"
+                      >
+                        <ShieldCheck className="h-4 w-4" /> Get supervisor
+                      </button>
+                    </>
+                  )}
+                  {overridable && !requiredSupervisor && (
+                    <p className="text-sm text-neutral-400">
+                      No supervisor is currently available to approve this — contact
+                      your manager directly.
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={backToIdle}
+                    className="text-sm text-neutral-400 underline hover:text-neutral-200"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              {status === "supervisor_pin" && requiredSupervisor && (
+                <div className="flex flex-col items-center gap-4">
+                  <div className="flex items-center gap-2 text-lg font-medium">
+                    <ShieldCheck className="h-5 w-5 text-blue-400" />
+                    {requiredSupervisor.employeeName}, enter your PIN to approve
+                  </div>
+                  <PinPad
+                    value={supervisorPin}
+                    onChange={setSupervisorPin}
+                    onSubmit={handleSupervisorPinSubmit}
+                    disabled={verifyingSupervisorPin}
+                  />
+                  {supervisorPinError && (
+                    <p className="text-sm text-red-400">{supervisorPinError}</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={backToIdle}
+                    className="text-sm text-neutral-400 hover:text-neutral-200"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              {status === "override_reason" && (
+                <div className="flex flex-col gap-3">
+                  <p className="text-sm text-neutral-300">
+                    Reason for this override (required)
+                  </p>
+                  <textarea
+                    autoFocus
+                    value={overrideReasonText}
+                    onChange={(e) => setOverrideReasonText(e.target.value)}
+                    placeholder="e.g. shift swap approved, traffic delay..."
+                    className="min-h-20 rounded-lg bg-neutral-800 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleConfirmOverride}
+                    disabled={submittingOverride || !overrideReasonText.trim()}
+                    className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-3 font-medium text-white disabled:cursor-not-allowed disabled:bg-neutral-700"
+                  >
+                    {submittingOverride && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Confirm {intent === "punch_in" ? "punch in" : "punch out"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={backToIdle}
+                    className="text-sm text-neutral-400 underline hover:text-neutral-200"
+                  >
+                    Cancel
                   </button>
                 </div>
               )}

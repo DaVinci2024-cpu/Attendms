@@ -118,8 +118,10 @@ function PerformancePage() {
 
       <p className="rounded-lg bg-neutral-900 px-3 py-2 text-xs text-neutral-500">
         Score = attendance rate (days worked ÷ days scheduled) minus a penalty
-        for how often a record needed a supervisor correction. Employees with
-        no scheduled shifts in this period aren&apos;t scored.
+        for how often a record needed a supervisor correction after the fact
+        (Edits) or a supervisor override at the kiosk itself — late,
+        unscheduled, or an early punch-out (Overrides). Employees with no
+        scheduled shifts in this period aren&apos;t scored.
       </p>
 
       {error && <p className="text-sm text-red-400">{error}</p>}
@@ -163,6 +165,9 @@ function PerformancePage() {
                     Edits
                   </th>
                   <th className="border-b border-neutral-800 px-3 py-2 text-neutral-400">
+                    Overrides
+                  </th>
+                  <th className="border-b border-neutral-800 px-3 py-2 text-neutral-400">
                     Score
                   </th>
                 </tr>
@@ -178,6 +183,7 @@ function PerformancePage() {
                     <td className="px-3 py-2">{row.workedDays}</td>
                     <td className="px-3 py-2">{row.attendanceRate?.toFixed(0)}%</td>
                     <td className="px-3 py-2">{row.editsCount}</td>
+                    <td className="px-3 py-2">{row.overridesCount}</td>
                     <td className="px-3 py-2 font-semibold">{row.score?.toFixed(0)}</td>
                   </tr>
                 ))}
@@ -185,7 +191,7 @@ function PerformancePage() {
                   <tr key={row.employeeId} className="border-b border-neutral-800 text-neutral-500">
                     <td className="px-3 py-2">—</td>
                     <td className="px-3 py-2">{row.employeeName}</td>
-                    <td className="px-3 py-2" colSpan={5}>
+                    <td className="px-3 py-2" colSpan={6}>
                       No scheduled shifts in this period
                     </td>
                   </tr>

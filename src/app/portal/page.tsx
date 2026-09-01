@@ -547,6 +547,10 @@ function PortalDashboard({ employee }: { employee: Employee }) {
                   <p className="text-xs text-neutral-500">Corrections needed</p>
                   <p className="text-lg">{performance.editsCount}</p>
                 </div>
+                <div>
+                  <p className="text-xs text-neutral-500">Supervisor overrides</p>
+                  <p className="text-lg">{performance.overridesCount}</p>
+                </div>
               </div>
             )}
           </section>

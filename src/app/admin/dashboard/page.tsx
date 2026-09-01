@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { History, LogOut, Loader2, Pencil, X } from "lucide-react";
+import { History, LogOut, Loader2, Pencil, ShieldCheck, X } from "lucide-react";
 import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
 import {
   closeShift,
@@ -299,6 +299,16 @@ function TimeCell({
           className="flex items-center gap-0.5 text-xs text-amber-400"
         >
           <History className="h-3 w-3" />
+        </span>
+      )}
+      {log.override && (
+        <span
+          title={`Supervisor override by ${log.override.supervisorName} at ${new Date(
+            log.override.overriddenAt
+          ).toLocaleString()}: "${log.override.reason}"`}
+          className="flex items-center gap-0.5 text-xs text-blue-400"
+        >
+          <ShieldCheck className="h-3 w-3" />
         </span>
       )}
       {canEdit && (
