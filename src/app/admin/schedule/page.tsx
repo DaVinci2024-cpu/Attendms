@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  CalendarCheck,
   ChevronLeft,
   ChevronRight,
   History,
@@ -16,6 +17,7 @@ import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
 import { SchedulePrintView } from "@/components/SchedulePrintView";
 import {
   fetchAllEmployees,
+  fetchAvailabilityForWeek,
   fetchScheduleColumnTemplate,
   fetchWeekSchedule,
   saveScheduleColumnTemplate,
@@ -24,6 +26,7 @@ import {
 import { cellAssignments, defaultColumns } from "@/lib/schedule";
 import { mondayOf, toWeekId } from "@/lib/week";
 import type {
+  AvailabilityEntry,
   Employee,
   ScheduleAssignment,
   ScheduleColumnTemplate,
@@ -78,6 +81,7 @@ function ScheduleGrid() {
   const [schedule, setSchedule] = useState<WeekSchedule | null>(null);
   const [columnTemplate, setColumnTemplate] = useState<ScheduleColumnTemplate | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [availability, setAvailability] = useState<AvailabilityEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -92,14 +96,16 @@ function ScheduleGrid() {
       setLoading(true);
       setError(null);
       try {
-        const [existing, emps, template] = await Promise.all([
+        const [existing, emps, template, availabilityList] = await Promise.all([
           fetchWeekSchedule(weekId),
           fetchAllEmployees(),
           fetchScheduleColumnTemplate(),
+          fetchAvailabilityForWeek(weekId),
         ]);
         if (cancelled) return;
         setEmployees(emps);
         setColumnTemplate(template);
+        setAvailability(availabilityList);
 
         if (existing) {
           const isCustom = existing.customColumns ?? false;
@@ -523,6 +529,52 @@ function ScheduleGrid() {
                 )}
                 {dirty ? "Save changes" : "Saved"}
               </button>
+            </div>
+          )}
+
+          {availability.length > 0 && (
+            <div className="rounded-xl bg-neutral-900 p-4">
+              <h2 className="mb-2 flex items-center gap-2 text-sm font-medium">
+                <CalendarCheck className="h-4 w-4 text-emerald-400" /> Availability
+                submitted for this week
+              </h2>
+              <div className="flex flex-col gap-2">
+                {availability.map((entry) => (
+                  <div
+                    key={entry.employeeId}
+                    className="rounded-lg bg-neutral-800/60 px-3 py-2 text-sm"
+                  >
+                    <p className="font-medium">{entry.employeeName}</p>
+                    <ul className="mt-1 flex flex-col gap-0.5 text-xs text-neutral-400">
+                      {Object.entries(entry.availableSlots)
+                        .filter(([, colIds]) => colIds.length > 0)
+                        .sort(([a], [b]) => a.localeCompare(b))
+                        .map(([dateKey, colIds]) => (
+                          <li key={dateKey}>
+                            {new Date(`${dateKey}T00:00:00`).toLocaleDateString(undefined, {
+                              weekday: "short",
+                              month: "short",
+                              day: "numeric",
+                            })}
+                            :{" "}
+                            {colIds
+                              .map(
+                                (id) =>
+                                  schedule.columns.find((c) => c.columnId === id)?.label ??
+                                  "a shift that's since been removed"
+                              )
+                              .join(", ")}
+                          </li>
+                        ))}
+                    </ul>
+                    {entry.note && (
+                      <p className="mt-1 text-xs italic text-neutral-500">
+                        &quot;{entry.note}&quot;
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

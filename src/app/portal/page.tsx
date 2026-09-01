@@ -8,7 +8,15 @@ import {
   updatePassword,
   type User,
 } from "firebase/auth";
-import { ChevronLeft, ChevronRight, LogOut, Loader2, Megaphone, Printer } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  LogOut,
+  Loader2,
+  Megaphone,
+  Printer,
+} from "lucide-react";
 import { SchedulePrintView } from "@/components/SchedulePrintView";
 import { getAuthClient } from "@/lib/auth";
 import {
@@ -16,13 +24,22 @@ import {
   fetchAnnouncements,
   fetchAttendanceForEmployee,
   fetchEmployeeByAuthUid,
+  fetchMyAvailability,
   fetchScheduleColumnTemplate,
   fetchWeekSchedule,
+  saveAvailability,
 } from "@/lib/firestoreRepo";
 import { pairSessions, formatDuration } from "@/lib/hours";
 import { cellAssignments } from "@/lib/schedule";
 import { mondayOf, toWeekId } from "@/lib/week";
-import type { Announcement, AttendanceLog, Employee, WeekSchedule } from "@/lib/types";
+import type {
+  Announcement,
+  AttendanceLog,
+  AvailabilityEntry,
+  Employee,
+  ScheduleColumnTemplate,
+  WeekSchedule,
+} from "@/lib/types";
 
 export default function PortalPage() {
   const router = useRouter();
@@ -190,7 +207,12 @@ function PortalDashboard({ employee }: { employee: Employee }) {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
   const [schedule, setSchedule] = useState<WeekSchedule | null>(null);
+  const [columnTemplate, setColumnTemplate] = useState<ScheduleColumnTemplate | null>(null);
   const [scheduleLoading, setScheduleLoading] = useState(true);
+  const [draftSlots, setDraftSlots] = useState<Record<string, string[]>>({});
+  const [draftNote, setDraftNote] = useState("");
+  const [availabilitySaving, setAvailabilitySaving] = useState(false);
+  const [availabilitySaved, setAvailabilitySaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -230,10 +252,12 @@ function PortalDashboard({ employee }: { employee: Employee }) {
 
     async function loadSchedule() {
       setScheduleLoading(true);
+      setAvailabilitySaved(false);
       try {
-        const [week, template] = await Promise.all([
+        const [week, template, myAvailability] = await Promise.all([
           fetchWeekSchedule(weekId),
           fetchScheduleColumnTemplate(),
+          fetchMyAvailability(weekId, employee.employeeId),
         ]);
         if (cancelled) return;
         // A week not split off into its own columns always follows the
@@ -244,6 +268,9 @@ function PortalDashboard({ employee }: { employee: Employee }) {
             ? { ...week, columns: template.columns }
             : week
         );
+        setColumnTemplate(template);
+        setDraftSlots(myAvailability?.availableSlots ?? {});
+        setDraftNote(myAvailability?.note ?? "");
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to load schedule");
@@ -258,7 +285,7 @@ function PortalDashboard({ employee }: { employee: Employee }) {
     return () => {
       cancelled = true;
     };
-  }, [weekId]);
+  }, [weekId, employee.employeeId]);
 
   function goToWeek(offsetWeeks: number) {
     setWeekStart((prev) => {
@@ -268,7 +295,51 @@ function PortalDashboard({ employee }: { employee: Employee }) {
     });
   }
 
+  function toggleAvailabilitySlot(dateKey: string, columnId: string) {
+    setDraftSlots((prev) => {
+      const current = prev[dateKey] ?? [];
+      const next = current.includes(columnId)
+        ? current.filter((id) => id !== columnId)
+        : [...current, columnId];
+      return { ...prev, [dateKey]: next };
+    });
+    setAvailabilitySaved(false);
+  }
+
+  async function handleSubmitAvailability() {
+    setAvailabilitySaving(true);
+    setError(null);
+    try {
+      const entry: AvailabilityEntry = {
+        weekId,
+        employeeId: employee.employeeId,
+        employeeName: employee.fullName,
+        availableSlots: draftSlots,
+        note: draftNote.trim(),
+        submittedAt: new Date().toISOString(),
+      };
+      await saveAvailability(entry);
+      setAvailabilitySaved(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save availability");
+    } finally {
+      setAvailabilitySaving(false);
+    }
+  }
+
   const thisWeekId = toWeekId(mondayOf(new Date()));
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + i);
+    return {
+      dateKey: toWeekId(d),
+      label: d.toLocaleDateString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      }),
+    };
+  });
 
   const sessions = logs ? pairSessions(logs) : [];
   const totalMs = sessions.reduce((sum, s) => sum + (s.durationMs ?? 0), 0);
@@ -455,6 +526,70 @@ function PortalDashboard({ employee }: { employee: Employee }) {
                   </tbody>
                 </table>
               </div>
+            )}
+          </section>
+
+          <section className="rounded-xl bg-neutral-900 p-4">
+            <h2 className="mb-2 font-medium">Your availability — Week of {weekId}</h2>
+            {!columnTemplate ? (
+              <p className="text-sm text-neutral-400">
+                No shift types have been set up yet — check back once a schedule
+                exists.
+              </p>
+            ) : (
+              <>
+                <p className="mb-2 text-xs text-neutral-500">
+                  Tell your admin which shifts you can work this week.
+                </p>
+                <div className="flex flex-col gap-2">
+                  {weekDays.map(({ dateKey, label }) => (
+                    <div
+                      key={dateKey}
+                      className="flex flex-wrap items-center gap-3 rounded-lg bg-neutral-800/60 px-3 py-2"
+                    >
+                      <span className="w-28 shrink-0 text-sm">{label}</span>
+                      <div className="flex flex-wrap gap-3">
+                        {columnTemplate.columns.map((col) => (
+                          <label
+                            key={col.columnId}
+                            className="flex items-center gap-1.5 text-xs text-neutral-300"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={(draftSlots[dateKey] ?? []).includes(col.columnId)}
+                              onChange={() => toggleAvailabilitySlot(dateKey, col.columnId)}
+                            />
+                            {col.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <textarea
+                  className="mt-2 min-h-16 w-full rounded-lg bg-neutral-800 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-600"
+                  placeholder="Optional note (e.g. can only work mornings after the 10th)"
+                  value={draftNote}
+                  onChange={(e) => {
+                    setDraftNote(e.target.value);
+                    setAvailabilitySaved(false);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={handleSubmitAvailability}
+                  disabled={availabilitySaving}
+                  className="mt-2 flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-neutral-700"
+                >
+                  {availabilitySaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Submit availability
+                </button>
+                {availabilitySaved && (
+                  <p className="mt-1 flex items-center gap-1 text-xs text-emerald-400">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Saved.
+                  </p>
+                )}
+              </>
             )}
           </section>
         </>

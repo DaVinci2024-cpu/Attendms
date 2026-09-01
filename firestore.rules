@@ -150,6 +150,23 @@ service cloud.firestore {
         allow create, delete: if hasPermission("manage_announcements");
         allow update: if false;
       }
+
+      // An employee's self-reported availability for one week (doc id
+      // `${weekId}_${employeeId}`). An employee manages only their own
+      // (matched the same way attendance matches a self-read, via their
+      // linked employee doc's authUid); manage_schedule holders can read
+      // everyone's, to reference while building the schedule, but don't
+      // write on an employee's behalf.
+      match /availability/{docId} {
+        allow read: if hasPermission("manage_schedule") || (
+          request.auth != null &&
+          get(/databases/$(database)/documents/companies/$(companyId)/employees/$(resource.data.employeeId)).data.authUid == request.auth.uid
+        );
+        allow create, update: if request.auth != null &&
+          get(/databases/$(database)/documents/companies/$(companyId)/employees/$(request.resource.data.employeeId)).data.authUid == request.auth.uid;
+        allow delete: if request.auth != null &&
+          get(/databases/$(database)/documents/companies/$(companyId)/employees/$(resource.data.employeeId)).data.authUid == request.auth.uid;
+      }
     }
   }
 }

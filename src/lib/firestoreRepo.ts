@@ -27,6 +27,7 @@ import type {
   AuthPolicy,
   PermissionGrant,
   Announcement,
+  AvailabilityEntry,
 } from "./types";
 
 function companyDoc() {
@@ -67,6 +68,14 @@ function permissionsCol(): CollectionReference {
 
 function announcementsCol(): CollectionReference {
   return collection(getDb(), "companies", COMPANY_ID, "announcements");
+}
+
+function availabilityCol(): CollectionReference {
+  return collection(getDb(), "companies", COMPANY_ID, "availability");
+}
+
+function availabilityDocId(weekId: string, employeeId: string): string {
+  return `${weekId}_${employeeId}`;
 }
 
 // Called once the admin is signed in (rules require auth to write the
@@ -327,4 +336,25 @@ export async function postAnnouncement(announcement: Announcement): Promise<void
 
 export async function deleteAnnouncement(announcementId: string): Promise<void> {
   await deleteDoc(doc(announcementsCol(), announcementId));
+}
+
+export async function fetchMyAvailability(
+  weekId: string,
+  employeeId: string
+): Promise<AvailabilityEntry | null> {
+  const snapshot = await getDoc(doc(availabilityCol(), availabilityDocId(weekId, employeeId)));
+  return snapshot.exists() ? (snapshot.data() as AvailabilityEntry) : null;
+}
+
+export async function saveAvailability(entry: AvailabilityEntry): Promise<void> {
+  await setDoc(doc(availabilityCol(), availabilityDocId(entry.weekId, entry.employeeId)), entry);
+}
+
+// Scoped to one week via a `where` clause (single-field, no composite
+// index needed) so an admin building that week's schedule can see
+// everyone's submitted availability for it.
+export async function fetchAvailabilityForWeek(weekId: string): Promise<AvailabilityEntry[]> {
+  const q = query(availabilityCol(), where("weekId", "==", weekId));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((d) => d.data() as AvailabilityEntry);
 }

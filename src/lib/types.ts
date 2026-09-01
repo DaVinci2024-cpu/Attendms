@@ -198,3 +198,20 @@ export interface Announcement {
   postedByName: string;
   postedAt: string; // ISO
 }
+
+// An employee's self-reported availability for one week, so an admin has
+// something to reference while building the schedule. Independent of
+// whether that week's WeekSchedule has been created yet — slots are keyed
+// by calendar date (YYYY-MM-DD) and the standard column template's
+// columnIds, not by a specific week doc's rowIds, precisely so an employee
+// can submit availability before the admin has drafted that week at all.
+// One doc per employee per week (doc id `${weekId}_${employeeId}`) —
+// resubmitting overwrites the previous entry rather than appending.
+export interface AvailabilityEntry {
+  weekId: string;
+  employeeId: string;
+  employeeName: string;
+  availableSlots: Record<string, string[]>; // date (YYYY-MM-DD) -> columnIds
+  note: string;
+  submittedAt: string;
+}
