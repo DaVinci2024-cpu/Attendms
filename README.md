@@ -60,9 +60,10 @@ Fill in:
   than one physical kiosk.
 
 Face recognition models are already vendored into `public/models` (copied
-from the `@vladmandic/face-api` npm package: SSD Mobilenet detector,
-68-point landmarks, and the 128-d recognition net). No separate download
-step is needed.
+from the `@vladmandic/face-api` npm package: Tiny Face Detector, its
+matching tiny 68-point landmark net, and the 128-d recognition net —
+chosen for real-time performance on modest kiosk hardware over the
+heavier SSD Mobilenet detector). No separate download step is needed.
 
 ### 5. Run it
 
