@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
 import { fetchAllEmployees, fetchWeekSchedule, saveWeekSchedule } from "@/lib/firestoreRepo";
+import { cellAssignments } from "@/lib/schedule";
 import { mondayOf, toWeekId } from "@/lib/week";
 import type { Employee, ScheduleAssignment, ScheduleColumn, WeekSchedule } from "@/lib/types";
 
@@ -120,7 +121,7 @@ function ScheduleGrid() {
                     cells: {
                       ...r.cells,
                       [columnId]: [
-                        ...(r.cells[columnId] ?? []),
+                        ...cellAssignments(r.cells, columnId),
                         { employeeId: employee.employeeId, employeeName: employee.fullName },
                       ],
                     },
@@ -144,7 +145,7 @@ function ScheduleGrid() {
                     ...r,
                     cells: {
                       ...r.cells,
-                      [columnId]: (r.cells[columnId] ?? []).filter(
+                      [columnId]: cellAssignments(r.cells, columnId).filter(
                         (a) => a.employeeId !== employeeId
                       ),
                     },
@@ -374,7 +375,7 @@ function ScheduleGrid() {
                     {schedule.columns.map((col) => (
                       <td key={col.columnId} className="px-3 py-2 align-top">
                         <CellAssignments
-                          assignments={row.cells[col.columnId] ?? []}
+                          assignments={cellAssignments(row.cells, col.columnId)}
                           employees={employees}
                           editable={canEdit}
                           onAdd={(employee) =>

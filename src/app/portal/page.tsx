@@ -17,6 +17,7 @@ import {
   fetchWeekSchedule,
 } from "@/lib/firestoreRepo";
 import { pairSessions, formatDuration } from "@/lib/hours";
+import { cellAssignments } from "@/lib/schedule";
 import { mondayOf, toWeekId } from "@/lib/week";
 import type { AttendanceLog, Employee, WeekSchedule } from "@/lib/types";
 
@@ -311,7 +312,7 @@ function PortalDashboard({ employee }: { employee: Employee }) {
                       <tr key={row.rowId} className="border-b border-neutral-800">
                         <td className="px-2 py-1">{row.label}</td>
                         {schedule.columns.map((col) => {
-                          const assignments = row.cells[col.columnId] ?? [];
+                          const assignments = cellAssignments(row.cells, col.columnId);
                           return (
                             <td key={col.columnId} className="px-2 py-1">
                               {assignments.length === 0 ? (
