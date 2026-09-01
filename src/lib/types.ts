@@ -199,6 +199,17 @@ export interface Announcement {
   postedAt: string; // ISO
 }
 
+// One shift an employee marked themselves available for on a given day.
+// columnLabel is denormalized (copied in at submission time, same reason
+// as ScheduleAssignment.employeeName) so a submission stays readable even
+// after the admin renames, removes, or re-adds that shift column later —
+// without it, a removed-and-re-added column (same name, new columnId)
+// would silently orphan every past submission that referenced it.
+export interface AvailabilitySlot {
+  columnId: string;
+  columnLabel: string;
+}
+
 // An employee's self-reported availability for one week, so an admin has
 // something to reference while building the schedule. Independent of
 // whether that week's WeekSchedule has been created yet — slots are keyed
@@ -211,7 +222,7 @@ export interface AvailabilityEntry {
   weekId: string;
   employeeId: string;
   employeeName: string;
-  availableSlots: Record<string, string[]>; // date (YYYY-MM-DD) -> columnIds
+  availableSlots: Record<string, AvailabilitySlot[]>; // date (YYYY-MM-DD) -> slots
   note: string;
   submittedAt: string;
 }

@@ -41,6 +41,7 @@ import type {
   Announcement,
   AttendanceLog,
   AvailabilityEntry,
+  AvailabilitySlot,
   Employee,
   ScheduleColumnTemplate,
   ShiftNote,
@@ -215,7 +216,7 @@ function PortalDashboard({ employee }: { employee: Employee }) {
   const [schedule, setSchedule] = useState<WeekSchedule | null>(null);
   const [columnTemplate, setColumnTemplate] = useState<ScheduleColumnTemplate | null>(null);
   const [scheduleLoading, setScheduleLoading] = useState(true);
-  const [draftSlots, setDraftSlots] = useState<Record<string, string[]>>({});
+  const [draftSlots, setDraftSlots] = useState<Record<string, AvailabilitySlot[]>>({});
   const [draftNote, setDraftNote] = useState("");
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
   const [availabilitySaved, setAvailabilitySaved] = useState(false);
@@ -380,12 +381,12 @@ function PortalDashboard({ employee }: { employee: Employee }) {
     setShiftNotes((prev) => [...prev, note]);
   }
 
-  function toggleAvailabilitySlot(dateKey: string, columnId: string) {
+  function toggleAvailabilitySlot(dateKey: string, columnId: string, columnLabel: string) {
     setDraftSlots((prev) => {
       const current = prev[dateKey] ?? [];
-      const next = current.includes(columnId)
-        ? current.filter((id) => id !== columnId)
-        : [...current, columnId];
+      const next = current.some((slot) => slot.columnId === columnId)
+        ? current.filter((slot) => slot.columnId !== columnId)
+        : [...current, { columnId, columnLabel }];
       return { ...prev, [dateKey]: next };
     });
     setAvailabilitySaved(false);
@@ -687,8 +688,12 @@ function PortalDashboard({ employee }: { employee: Employee }) {
                           >
                             <input
                               type="checkbox"
-                              checked={(draftSlots[dateKey] ?? []).includes(col.columnId)}
-                              onChange={() => toggleAvailabilitySlot(dateKey, col.columnId)}
+                              checked={(draftSlots[dateKey] ?? []).some(
+                                (slot) => slot.columnId === col.columnId
+                              )}
+                              onChange={() =>
+                                toggleAvailabilitySlot(dateKey, col.columnId, col.label)
+                              }
                             />
                             {col.label}
                           </label>

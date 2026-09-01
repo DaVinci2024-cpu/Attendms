@@ -594,23 +594,16 @@ function ScheduleGrid() {
                     <p className="font-medium">{entry.employeeName}</p>
                     <ul className="mt-1 flex flex-col gap-0.5 text-xs text-neutral-400">
                       {Object.entries(entry.availableSlots)
-                        .filter(([, colIds]) => colIds.length > 0)
+                        .filter(([, slots]) => slots.length > 0)
                         .sort(([a], [b]) => a.localeCompare(b))
-                        .map(([dateKey, colIds]) => (
+                        .map(([dateKey, slots]) => (
                           <li key={dateKey}>
                             {new Date(`${dateKey}T00:00:00`).toLocaleDateString(undefined, {
                               weekday: "short",
                               month: "short",
                               day: "numeric",
                             })}
-                            :{" "}
-                            {colIds
-                              .map(
-                                (id) =>
-                                  schedule.columns.find((c) => c.columnId === id)?.label ??
-                                  "a shift that's since been removed"
-                              )
-                              .join(", ")}
+                            : {slots.map((s) => s.columnLabel).join(", ")}
                           </li>
                         ))}
                     </ul>
