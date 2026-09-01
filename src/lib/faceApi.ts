@@ -18,17 +18,25 @@ function getFaceApi(): Promise<typeof FaceApiModule> {
 let modelsLoaded: Promise<void> | null = null;
 
 /**
- * Loads the SSD Mobilenet detector, 68-point landmark net, and the 128-d
- * face recognition net from /public/models. Safe to call repeatedly —
- * the underlying load only happens once.
+ * Loads the tiny face detector, its matching tiny 68-point landmark net,
+ * and the 128-d face recognition net from /public/models. Safe to call
+ * repeatedly — the underlying load only happens once.
+ *
+ * Was SSD Mobilenet v1 + the full landmark net (~12MB combined, and slow
+ * enough per-frame on modest hardware to visibly stutter the UI, since
+ * detection reruns on an interval the whole time the kiosk is scanning).
+ * Tiny Face Detector is purpose-built for exactly this — real-time,
+ * single/front-facing-camera detection — at a fraction of the size and
+ * inference cost, which is the right tradeoff for a kiosk where the face
+ * is always close to the camera.
  */
 export function loadFaceModels(): Promise<void> {
   if (!modelsLoaded) {
     modelsLoaded = getFaceApi()
       .then((faceapi) =>
         Promise.all([
-          faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
-          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+          faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),
           faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
         ])
       )
@@ -42,8 +50,8 @@ export async function detectSingleFaceDescriptor(
 ): Promise<Float32Array | null> {
   const faceapi = await getFaceApi();
   const result = await faceapi
-    .detectSingleFace(input)
-    .withFaceLandmarks()
+    .detectSingleFace(input, new faceapi.TinyFaceDetectorOptions({ inputSize: 224 }))
+    .withFaceLandmarks(true)
     .withFaceDescriptor();
   return result ? result.descriptor : null;
 }

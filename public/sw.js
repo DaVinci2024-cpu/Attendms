@@ -4,7 +4,7 @@
 // this is the other half: can the page itself even open.
 //
 // Bump this on every deploy that should invalidate old cached pages/assets.
-const CACHE_NAME = "attendms-shell-v1";
+const CACHE_NAME = "attendms-shell-v2";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
