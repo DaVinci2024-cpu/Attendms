@@ -10,6 +10,7 @@ import {
   ScanFace,
   Settings,
   ShieldCheck,
+  TrendingUp,
   UserPlus,
   Users,
 } from "lucide-react";
@@ -66,6 +67,12 @@ const LINKS: NavLink[] = [
     label: "Announcements",
     icon: Megaphone,
     visible: (has) => has("manage_announcements"),
+  },
+  {
+    href: "/admin/performance",
+    label: "Performance",
+    icon: TrendingUp,
+    visible: (has) => has("view_reports"),
   },
 ];
 

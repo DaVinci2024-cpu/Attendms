@@ -34,8 +34,9 @@ import {
   saveAvailability,
 } from "@/lib/firestoreRepo";
 import { pairSessions, formatDuration } from "@/lib/hours";
+import { computeEmployeePerformance, type EmployeePerformance } from "@/lib/performance";
 import { cellAssignments } from "@/lib/schedule";
-import { mondayOf, toWeekId } from "@/lib/week";
+import { mondayOf, toWeekId, weekIdsBack } from "@/lib/week";
 import type {
   Announcement,
   AttendanceLog,
@@ -219,6 +220,8 @@ function PortalDashboard({ employee }: { employee: Employee }) {
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
   const [availabilitySaved, setAvailabilitySaved] = useState(false);
   const [shiftNotes, setShiftNotes] = useState<ShiftNote[]>([]);
+  const [performance, setPerformance] = useState<EmployeePerformance | null>(null);
+  const [performanceLoading, setPerformanceLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -236,6 +239,40 @@ function PortalDashboard({ employee }: { employee: Employee }) {
       cancelled = true;
     };
   }, [employee.employeeId]);
+
+  // Same last-4-weeks coverage-vs-schedule metric the admin Performance
+  // page shows, computed for just this one employee. Waits on `logs` from
+  // the effect above instead of re-fetching attendance.
+  useEffect(() => {
+    if (logs === null) return;
+    let cancelled = false;
+
+    async function loadPerformance() {
+      setPerformanceLoading(true);
+      try {
+        const weekIds = weekIdsBack(4);
+        const periodStart = new Date(`${weekIds[weekIds.length - 1]}T00:00:00`).getTime();
+        const schedulesRaw = await Promise.all(weekIds.map((id) => fetchWeekSchedule(id)));
+        if (cancelled) return;
+        const schedules = schedulesRaw.filter((s): s is WeekSchedule => s !== null);
+        const periodLogs = (logs ?? []).filter(
+          (log) => new Date(log.timestamp).getTime() >= periodStart
+        );
+        const [row] = computeEmployeePerformance([employee], schedules, periodLogs);
+        setPerformance(row ?? null);
+      } catch {
+        // Non-critical section — the rest of the portal still works.
+      } finally {
+        if (!cancelled) setPerformanceLoading(false);
+      }
+    }
+
+    loadPerformance();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [logs, employee]);
 
   useEffect(() => {
     let cancelled = false;
@@ -453,6 +490,39 @@ function PortalDashboard({ employee }: { employee: Employee }) {
                 </tbody>
               </table>
             </div>
+          </section>
+
+          <section className="rounded-xl bg-neutral-900 p-4">
+            <h2 className="mb-2 font-medium">Your performance — last 4 weeks</h2>
+            {performanceLoading ? (
+              <div className="flex justify-center py-4">
+                <Loader2 className="h-5 w-5 animate-spin text-neutral-400" />
+              </div>
+            ) : !performance || performance.score === null ? (
+              <p className="text-sm text-neutral-400">
+                No scheduled shifts in the last 4 weeks to compare against.
+              </p>
+            ) : (
+              <div className="flex flex-wrap items-center gap-6">
+                <div>
+                  <p className="text-xs text-neutral-500">Score</p>
+                  <p className="text-2xl font-semibold">
+                    {performance.score.toFixed(0)}
+                    <span className="text-sm text-neutral-500">/100</span>
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-neutral-500">Shifts worked</p>
+                  <p className="text-lg">
+                    {performance.workedDays} / {performance.scheduledDays}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-neutral-500">Corrections needed</p>
+                  <p className="text-lg">{performance.editsCount}</p>
+                </div>
+              </div>
+            )}
           </section>
 
           <section className="rounded-xl bg-neutral-900 p-4">

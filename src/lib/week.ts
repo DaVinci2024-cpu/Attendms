@@ -10,3 +10,14 @@ export function mondayOf(date: Date): Date {
 export function toWeekId(monday: Date): string {
   return monday.toLocaleDateString("en-CA"); // YYYY-MM-DD
 }
+
+// This week's Monday, then each Monday before it — e.g. weeksBack(4)
+// gives this week plus the 3 before it.
+export function weekIdsBack(weeksBack: number): string[] {
+  const thisMonday = mondayOf(new Date());
+  return Array.from({ length: weeksBack }, (_, i) => {
+    const d = new Date(thisMonday);
+    d.setDate(d.getDate() - i * 7);
+    return toWeekId(d);
+  });
+}
