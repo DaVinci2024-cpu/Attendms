@@ -116,6 +116,18 @@ export interface KioskDisplaySettings {
   updatedAt: string;
 }
 
+// How the kiosk identifies whoever is punching. PIN confirmation is always
+// required regardless of method — this only controls whether/when face
+// matching is used to find the candidate first.
+export type AuthMethod = "face_and_pin" | "pin_only" | "face_with_pin_fallback";
+
+// Public-readable for the same reason as KioskDisplaySettings above — kept
+// as its own document so the kiosk can read it with no login.
+export interface AuthPolicy {
+  method: AuthMethod;
+  updatedAt: string;
+}
+
 // The permission catalog. `adminUids` on Company remain permanent
 // superusers regardless of this — grants here are the additive layer for
 // giving someone (another admin, or an employee's own portal account) a

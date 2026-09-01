@@ -117,6 +117,14 @@ service cloud.firestore {
         allow write: if hasPermission("manage_kiosk_settings");
       }
 
+      // Which identification method(s) the kiosk uses (face+PIN, PIN-only,
+      // or face with a PIN fallback). Same world-readable/manage_kiosk_settings
+      // pattern as kioskDisplay above.
+      match /settings/authPolicy {
+        allow read: if true;
+        allow write: if hasPermission("manage_kiosk_settings");
+      }
+
       // Permission grants. A user can read their own grant (so the UI
       // knows what to show them); only manage_permissions holders can see
       // or change anyone else's, or issue/revoke grants at all.

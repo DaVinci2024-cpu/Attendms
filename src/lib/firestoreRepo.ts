@@ -22,6 +22,7 @@ import type {
   Company,
   WeekSchedule,
   KioskDisplaySettings,
+  AuthPolicy,
   PermissionGrant,
 } from "./types";
 
@@ -47,6 +48,10 @@ function scheduleDoc(weekId: string) {
 
 function kioskDisplayDoc() {
   return doc(getDb(), "companies", COMPANY_ID, "settings", "kioskDisplay");
+}
+
+function authPolicyDoc() {
+  return doc(getDb(), "companies", COMPANY_ID, "settings", "authPolicy");
 }
 
 function permissionsCol(): CollectionReference {
@@ -191,6 +196,15 @@ export async function saveKioskDisplaySettings(
   settings: KioskDisplaySettings
 ): Promise<void> {
   await setDoc(kioskDisplayDoc(), settings);
+}
+
+export async function fetchAuthPolicy(): Promise<AuthPolicy | null> {
+  const snapshot = await getDoc(authPolicyDoc());
+  return snapshot.exists() ? (snapshot.data() as AuthPolicy) : null;
+}
+
+export async function saveAuthPolicy(policy: AuthPolicy): Promise<void> {
+  await setDoc(authPolicyDoc(), policy);
 }
 
 export async function fetchAllPermissionGrants(): Promise<PermissionGrant[]> {

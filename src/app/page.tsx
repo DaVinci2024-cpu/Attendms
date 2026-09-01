@@ -7,6 +7,7 @@ import {
   LogIn,
   LogOut,
   Megaphone,
+  Search,
   ShieldAlert,
   UserCheck,
   Users,
@@ -23,6 +24,7 @@ import { verifyPin } from "@/lib/pin";
 import { formatDuration } from "@/lib/hours";
 import {
   fetchAllEmployees,
+  fetchAuthPolicy,
   fetchKioskDisplaySettings,
   recordPunch,
   recordSuspiciousEvent,
@@ -34,9 +36,15 @@ import {
   MAX_PIN_ATTEMPTS,
   PUNCH_DEBOUNCE_MS,
 } from "@/lib/constants";
-import type { AttendanceLog, Employee, PunchType } from "@/lib/types";
+import type { AttendanceLog, AuthMethod, Employee, PunchType } from "@/lib/types";
 
-type KioskStatus = "idle" | "scanning" | "pin_entry" | "success" | "suspicious";
+type KioskStatus =
+  | "idle"
+  | "scanning"
+  | "select_employee"
+  | "pin_entry"
+  | "success"
+  | "suspicious";
 
 interface SuccessInfo {
   employeeName: string;
@@ -44,13 +52,26 @@ interface SuccessInfo {
   durationLabel?: string;
 }
 
+// Module-scope (not inside the component) so the React Compiler's purity
+// check — which flags impure calls like Date.now() made directly in a
+// component/hook body — doesn't apply to it.
+function isDebounced(debounceUntilMap: Map<string, number>, employeeId: string): boolean {
+  return Date.now() < (debounceUntilMap.get(employeeId) ?? 0);
+}
+
 export default function Home() {
   const [status, setStatus] = useState<KioskStatus>("idle");
+  const [authMethod, setAuthMethod] = useState<AuthMethod>("face_and_pin");
+  // The camera should only ever run while actually face-scanning — never
+  // on the idle screen, never during the PIN-only name picker, and never
+  // at all in pin_only mode.
+  const usingCamera =
+    authMethod !== "pin_only" && status !== "idle" && status !== "select_employee";
   const {
     videoRef,
     ready: cameraReady,
     error: cameraError,
-  } = useCamera(status !== "idle");
+  } = useCamera(usingCamera);
   const { loaded: modelsLoaded, error: modelsError } = useFaceModels();
 
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -73,6 +94,8 @@ export default function Home() {
   const [intent, setIntent] = useState<PunchType | null>(null);
   const [scanHint, setScanHint] = useState<string | null>(null);
   const [candidate, setCandidate] = useState<MatchResult | null>(null);
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [employeeSearch, setEmployeeSearch] = useState("");
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState<string | null>(null);
   const [verifyingPin, setVerifyingPin] = useState(false);
@@ -135,6 +158,15 @@ export default function Home() {
       } catch (err) {
         if (cancelled || !navigator.onLine) return;
         console.error("Failed to load kiosk display settings:", err);
+      }
+
+      try {
+        const policy = await fetchAuthPolicy();
+        if (cancelled) return;
+        if (policy?.method) setAuthMethod(policy.method);
+      } catch (err) {
+        if (cancelled || !navigator.onLine) return;
+        console.error("Failed to load auth policy:", err);
       }
     }
 
@@ -204,10 +236,29 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [cameraReady, modelsLoaded, employees, videoRef]);
 
+  // If the camera fails outright while scanning and the policy allows a PIN
+  // fallback, drop straight into the name picker instead of leaving the
+  // employee stuck looking at a dead camera view.
+  useEffect(() => {
+    if (
+      status !== "scanning" ||
+      authMethod !== "face_with_pin_fallback" ||
+      !cameraError
+    ) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      setEmployeeSearch("");
+      setStatus("select_employee");
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [status, authMethod, cameraError]);
+
   function startPunch(punchType: PunchType) {
     setIntent(punchType);
     setScanHint(null);
-    setStatus("scanning");
+    setEmployeeSearch("");
+    setStatus(authMethod === "pin_only" ? "select_employee" : "scanning");
     // Refresh employees/attendance right as a punch starts, so a kiosk
     // tab left open for a while still sees anyone enrolled since it loaded
     // (camera/model startup gives this a moment to land before scanning
@@ -215,18 +266,33 @@ export default function Home() {
     refreshData();
   }
 
+  function selectEmployeeManually(employee: Employee) {
+    if (isDebounced(debounceUntilRef.current, employee.employeeId)) {
+      setScanHint("Already punched recently — please wait a few seconds.");
+      return;
+    }
+    pinAttemptsRef.current.set(employee.employeeId, 0);
+    setSelectedEmployee(employee);
+    setCandidate(null);
+    setPin("");
+    setPinError(null);
+    setStatus("pin_entry");
+  }
+
   function backToIdle() {
     setScanHint(null);
     setIntent(null);
     setCandidate(null);
+    setSelectedEmployee(null);
+    setEmployeeSearch("");
     setPin("");
     setPinError(null);
     setStatus("idle");
   }
 
   async function handlePinSubmit() {
-    if (!candidate || !intent) return;
-    const employee = candidate.employee;
+    const employee = candidate?.employee ?? selectedEmployee;
+    if (!employee || !intent) return;
 
     setVerifyingPin(true);
     const pinCorrect = await verifyPin(pin, employee.pinSalt, employee.pinHash);
@@ -284,7 +350,9 @@ export default function Home() {
       employeeName: employee.fullName,
       timestamp: new Date().toISOString(),
       type: punchType,
-      matchConfidence: candidate.distance,
+      // -1 signals no face match was involved (PIN-only identification) —
+      // there's no meaningful Euclidean distance to record in that case.
+      matchConfidence: candidate?.distance ?? -1,
       pinConfirmed: true,
       kioskId: KIOSK_ID,
       syncedOffline: !online,
@@ -303,6 +371,7 @@ export default function Home() {
     setSuccessInfo({ employeeName: employee.fullName, punchType, durationLabel });
     setStatus("success");
     setCandidate(null);
+    setSelectedEmployee(null);
     setPin("");
     setIntent(null);
 
@@ -372,17 +441,21 @@ export default function Home() {
 
           {status !== "idle" && (
             <div className="flex flex-col gap-4">
-              <CameraView ref={videoRef} ready={cameraReady} error={cameraError} />
+              {usingCamera && (
+                <>
+                  <CameraView ref={videoRef} ready={cameraReady} error={cameraError} />
 
-              {modelsError && (
-                <p className="text-sm text-red-400">
-                  Failed to load face recognition models: {modelsError}
-                </p>
-              )}
-              {!modelsLoaded && !modelsError && (
-                <p className="text-sm text-neutral-400">
-                  Loading face recognition models...
-                </p>
+                  {modelsError && (
+                    <p className="text-sm text-red-400">
+                      Failed to load face recognition models: {modelsError}
+                    </p>
+                  )}
+                  {!modelsLoaded && !modelsError && (
+                    <p className="text-sm text-neutral-400">
+                      Loading face recognition models...
+                    </p>
+                  )}
+                </>
               )}
 
               {status === "scanning" && (
@@ -394,6 +467,19 @@ export default function Home() {
                   {scanHint && (
                     <p className="text-center text-xs text-amber-400">{scanHint}</p>
                   )}
+                  {authMethod === "face_with_pin_fallback" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScanHint(null);
+                        setEmployeeSearch("");
+                        setStatus("select_employee");
+                      }}
+                      className="text-xs text-blue-400 underline hover:text-blue-300"
+                    >
+                      Trouble with the camera? Enter PIN instead
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={backToIdle}
@@ -404,11 +490,55 @@ export default function Home() {
                 </div>
               )}
 
-              {status === "pin_entry" && candidate && (
+              {status === "select_employee" && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-2 rounded-lg bg-neutral-800 px-3 py-2">
+                    <Search className="h-4 w-4 shrink-0 text-neutral-500" />
+                    <input
+                      autoFocus
+                      value={employeeSearch}
+                      onChange={(e) => setEmployeeSearch(e.target.value)}
+                      placeholder="Search your name..."
+                      className="w-full bg-transparent text-sm outline-none placeholder:text-neutral-500"
+                    />
+                  </div>
+                  <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
+                    {employees
+                      .filter((e) => e.active)
+                      .filter((e) =>
+                        e.fullName.toLowerCase().includes(employeeSearch.trim().toLowerCase())
+                      )
+                      .map((employee) => (
+                        <button
+                          key={employee.employeeId}
+                          type="button"
+                          onClick={() => selectEmployeeManually(employee)}
+                          className="rounded-lg px-3 py-2 text-left text-sm hover:bg-neutral-800"
+                        >
+                          {employee.fullName}
+                        </button>
+                      ))}
+                    {employees.filter((e) => e.active).length === 0 && (
+                      <p className="px-3 py-2 text-sm text-neutral-500">
+                        No employees are enrolled on this device yet.
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={backToIdle}
+                    className="text-sm text-neutral-400 underline hover:text-neutral-200"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              {status === "pin_entry" && (candidate || selectedEmployee) && (
                 <div className="flex flex-col items-center gap-4">
                   <div className="flex items-center gap-2 text-lg font-medium">
                     <UserCheck className="h-5 w-5 text-blue-400" />
-                    Hi {candidate.employee.fullName}, enter your PIN
+                    Hi {(candidate?.employee ?? selectedEmployee)?.fullName}, enter your PIN
                   </div>
                   <PinPad
                     value={pin}
