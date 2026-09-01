@@ -296,33 +296,58 @@ function PortalDashboard({ employee }: { employee: Employee }) {
     async function loadSchedule() {
       setScheduleLoading(true);
       setAvailabilitySaved(false);
+      setError(null);
+
+      // Fetched independently (not Promise.all'd) so a permissions gap on
+      // one newer collection (e.g. rules not published yet for shiftNotes)
+      // can never mask the week schedule that would otherwise load fine.
+      let week: WeekSchedule | null = null;
+      let template: ScheduleColumnTemplate | null = null;
+      let hadCoreError = false;
       try {
-        const [week, template, myAvailability, notes] = await Promise.all([
-          fetchWeekSchedule(weekId),
-          fetchScheduleColumnTemplate(),
-          fetchMyAvailability(weekId, employee.employeeId),
-          fetchShiftNotesForWeek(weekId),
-        ]);
-        if (cancelled) return;
-        // A week not split off into its own columns always follows the
-        // current standard set, even if this week's own doc hasn't been
-        // re-saved since the standard columns last changed.
-        setSchedule(
-          week && !week.customColumns && template
-            ? { ...week, columns: template.columns }
-            : week
-        );
-        setColumnTemplate(template);
-        setDraftSlots(myAvailability?.availableSlots ?? {});
-        setDraftNote(myAvailability?.note ?? "");
-        setShiftNotes(notes);
+        week = await fetchWeekSchedule(weekId);
       } catch (err) {
+        hadCoreError = true;
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to load schedule");
         }
-      } finally {
-        if (!cancelled) setScheduleLoading(false);
       }
+      try {
+        template = await fetchScheduleColumnTemplate();
+      } catch (err) {
+        if (!cancelled && !hadCoreError) {
+          setError(err instanceof Error ? err.message : "Failed to load schedule");
+        }
+      }
+      if (cancelled) return;
+      // A week not split off into its own columns always follows the
+      // current standard set, even if this week's own doc hasn't been
+      // re-saved since the standard columns last changed.
+      setSchedule(
+        week && !week.customColumns && template
+          ? { ...week, columns: template.columns }
+          : week
+      );
+      setColumnTemplate(template);
+
+      try {
+        const myAvailability = await fetchMyAvailability(weekId, employee.employeeId);
+        if (!cancelled) {
+          setDraftSlots(myAvailability?.availableSlots ?? {});
+          setDraftNote(myAvailability?.note ?? "");
+        }
+      } catch {
+        // Non-critical — availability just won't prefill.
+      }
+
+      try {
+        const notes = await fetchShiftNotesForWeek(weekId);
+        if (!cancelled) setShiftNotes(notes);
+      } catch {
+        // Non-critical — notes just won't show.
+      }
+
+      if (!cancelled) setScheduleLoading(false);
     }
 
     loadSchedule();

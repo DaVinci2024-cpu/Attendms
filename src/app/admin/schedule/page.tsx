@@ -101,44 +101,61 @@ function ScheduleGrid() {
     async function loadSchedule() {
       setLoading(true);
       setError(null);
+
+      // Fetched independently (not one Promise.all'd batch) so a
+      // permissions gap on one newer collection (e.g. rules not yet
+      // published for shiftNotes/availability) can never block the core
+      // schedule — which would otherwise load fine — from displaying.
+      let existing: WeekSchedule | null = null;
+      let emps: Employee[] = [];
+      let template: ScheduleColumnTemplate | null = null;
+      let hadCoreError = false;
       try {
-        const [existing, emps, template, availabilityList, noteList] = await Promise.all([
+        [existing, emps, template] = await Promise.all([
           fetchWeekSchedule(weekId),
           fetchAllEmployees(),
           fetchScheduleColumnTemplate(),
-          fetchAvailabilityForWeek(weekId),
-          fetchShiftNotesForWeek(weekId),
         ]);
-        if (cancelled) return;
-        setEmployees(emps);
-        setColumnTemplate(template);
-        setAvailability(availabilityList);
-        setNotes(noteList);
-
-        if (existing) {
-          const isCustom = existing.customColumns ?? false;
-          setSchedule({
-            ...existing,
-            columns: isCustom ? existing.columns : template?.columns ?? existing.columns,
-            customColumns: isCustom,
-          });
-        } else {
-          setSchedule({
-            weekId,
-            columns: template?.columns ?? defaultColumns(),
-            customColumns: false,
-            rows: defaultRows(weekStart),
-            updatedAt: new Date().toISOString(),
-          });
-        }
-        setDirty(false);
       } catch (err) {
+        hadCoreError = true;
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to load schedule");
         }
-      } finally {
-        if (!cancelled) setLoading(false);
       }
+      if (cancelled) return;
+
+      setEmployees(emps);
+      setColumnTemplate(template);
+      if (existing) {
+        const isCustom = existing.customColumns ?? false;
+        setSchedule({
+          ...existing,
+          columns: isCustom ? existing.columns : template?.columns ?? existing.columns,
+          customColumns: isCustom,
+        });
+      } else if (!hadCoreError) {
+        setSchedule({
+          weekId,
+          columns: template?.columns ?? defaultColumns(),
+          customColumns: false,
+          rows: defaultRows(weekStart),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      setDirty(false);
+
+      try {
+        setAvailability(await fetchAvailabilityForWeek(weekId));
+      } catch {
+        // Non-critical — availability panel just won't show.
+      }
+      try {
+        setNotes(await fetchShiftNotesForWeek(weekId));
+      } catch {
+        // Non-critical — note counts just won't show.
+      }
+
+      if (!cancelled) setLoading(false);
     }
 
     loadSchedule();
@@ -401,11 +418,11 @@ function ScheduleGrid() {
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 
-      {loading || !schedule ? (
+      {loading ? (
         <div className="flex justify-center py-10">
           <Loader2 className="h-6 w-6 animate-spin text-neutral-400" />
         </div>
-      ) : (
+      ) : !schedule ? null : (
         <>
           {canEdit && (
             <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
