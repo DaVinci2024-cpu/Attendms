@@ -40,9 +40,34 @@ export function loadFaceModels(): Promise<void> {
           faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
         ])
       )
-      .then(() => undefined);
+      .then(() => warmUp());
   }
   return modelsLoaded;
+}
+
+// TensorFlow.js's WebGL backend compiles each model's shader kernels the
+// first time it actually runs a forward pass, not when its weights
+// finish loading — that one-time compile cost is separate from (and on
+// top of) inference speed, and was showing up as a visibly slow first
+// "Capture snapshot" on /enroll (or the kiosk's first scan), right after
+// the "Loading face recognition models..." indicator had already
+// disappeared. Running one throwaway detection here, against a blank
+// frame, pays that cost while the loading indicator is still up instead
+// of during someone's actual first capture.
+async function warmUp(): Promise<void> {
+  const faceapi = await getFaceApi();
+  const canvas = document.createElement("canvas");
+  canvas.width = 224;
+  canvas.height = 224;
+  try {
+    await faceapi
+      .detectSingleFace(canvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 224 }))
+      .withFaceLandmarks(true)
+      .withFaceDescriptor();
+  } catch {
+    // Best-effort only — a failure here just means the compile cost gets
+    // paid on the first real detection instead, not a functional problem.
+  }
 }
 
 export async function detectSingleFaceDescriptor(
