@@ -165,6 +165,13 @@ export interface WeekSchedule {
   // the standard template ("keep this week separate"). Absent/false means
   // this week always follows the template.
   customColumns?: boolean;
+  // Turns off the "must be on the schedule to punch in" rule for
+  // everyone, for this week only — the kiosk treats it exactly like a
+  // week with no schedule posted at all (see evaluateAndFinalize in
+  // src/app/page.tsx). Distinct from ScheduleExemption, which exempts one
+  // specific employee indefinitely/until an expiry regardless of which
+  // week it is; this is the opposite shape — everyone, one week.
+  scheduleRequirementWaived?: boolean;
   rows: ScheduleRow[];
   updatedAt: string;
   updatedBy?: string; // uid of whoever last saved this week

@@ -522,6 +522,14 @@ export default function Home() {
         return;
       }
 
+      // Admin has explicitly waived the schedule requirement for
+      // everyone, for this whole week (src/app/admin/schedule) — treat it
+      // exactly like the no-schedule-posted case above.
+      if (schedule.scheduleRequirementWaived) {
+        finalizePunch(employee, punchType, null, null, true);
+        return;
+      }
+
       const resolution = resolveShiftForPunchIn(
         schedule,
         mondayOf(now),

@@ -393,6 +393,15 @@ function ScheduleGrid() {
     setDirty(true);
   }
 
+  function toggleScheduleRequirementWaived() {
+    setSchedule((prev) =>
+      prev
+        ? { ...prev, scheduleRequirementWaived: !prev.scheduleRequirementWaived }
+        : prev
+    );
+    setDirty(true);
+  }
+
   async function handleSave() {
     if (!schedule) return;
     setSaving(true);
@@ -515,6 +524,34 @@ function ScheduleGrid() {
                 </>
               )}
             </div>
+          )}
+
+          {canEdit && (
+            <label
+              className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs ${
+                schedule.scheduleRequirementWaived
+                  ? "bg-amber-950/40 text-amber-200"
+                  : "bg-neutral-900 text-neutral-400"
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={schedule.scheduleRequirementWaived ?? false}
+                onChange={toggleScheduleRequirementWaived}
+              />
+              <span>
+                <strong>Allow punch-in without a schedule, for everyone, this week.</strong>{" "}
+                Turns off the &quot;must be on today&apos;s schedule&quot; rule at the
+                kiosk entirely for {weekId} — no supervisor needed either. Doesn&apos;t
+                affect other weeks. For exempting specific employees permanently or
+                long-term instead, use{" "}
+                <Link href="/admin/permissions" className="underline hover:no-underline">
+                  Roles &amp; permissions
+                </Link>
+                .
+              </span>
+            </label>
           )}
 
           <div className="overflow-x-auto rounded-xl bg-neutral-900">
