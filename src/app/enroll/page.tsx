@@ -8,18 +8,11 @@ import { useCamera } from "@/hooks/useCamera";
 import { useFaceModels } from "@/hooks/useFaceModels";
 import { detectSingleFaceDescriptor } from "@/lib/faceApi";
 import { createEmployee, ensureCompanyDoc, fetchAllEmployees } from "@/lib/firestoreRepo";
-import { findByPin, hashPin } from "@/lib/pin";
+import { findByPin, hashPin, PIN_PATTERN } from "@/lib/pin";
 import { CONSENT_POLICY_VERSION, ADMIN_EMAIL } from "@/lib/constants";
 import type { Employee } from "@/lib/types";
 
 const MAX_SNAPSHOTS = 3;
-// Fixed at exactly 6 digits (not the old 4-6 range) because the kiosk's
-// PIN-only mode now identifies who's punching from the PIN alone,
-// without asking for a name first — every employee's PIN has to be
-// checked against every other employee's, so keeping the search space
-// as large as possible (1,000,000 codes at 6 digits vs. 10,000 at 4)
-// matters more than it used to.
-const PIN_PATTERN = /^\d{6}$/;
 
 export default function EnrollPage() {
   return (

@@ -182,6 +182,24 @@ export async function setEmployeeSupervisorFlag(
   await updateDoc(doc(employeesCol(), employeeId), { isSupervisor });
 }
 
+export async function updateEmployeeName(
+  employeeId: string,
+  fullName: string
+): Promise<void> {
+  await updateDoc(doc(employeesCol(), employeeId), { fullName });
+}
+
+// There's no "current PIN" to show an admin — pinHash is one-way (see
+// src/lib/pin.ts), so editing a PIN can only ever mean replacing it with
+// a new one, never revealing/editing the existing value in place.
+export async function resetEmployeePin(
+  employeeId: string,
+  pinHash: string,
+  pinSalt: string
+): Promise<void> {
+  await updateDoc(doc(employeesCol(), employeeId), { pinHash, pinSalt });
+}
+
 // Employee-initiated deletion path (spec Section 5): removes the
 // descriptors and consent record entirely, independent of just flipping
 // active:false. Historical attendance logs (name + timestamp only, no

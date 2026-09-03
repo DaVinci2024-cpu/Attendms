@@ -1,16 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, KeyRound, Loader2, ShieldCheck, Trash2 } from "lucide-react";
+import {
+  CheckCircle2,
+  KeyRound,
+  Loader2,
+  Pencil,
+  RefreshCw,
+  ShieldCheck,
+  Trash2,
+} from "lucide-react";
 import { RequireAdmin } from "@/components/RequireAdmin";
 import {
   deleteEmployee,
   fetchAllEmployees,
   fetchEmployeeByPortalUsername,
   linkEmployeePortalAccount,
+  resetEmployeePin,
   setEmployeeSupervisorFlag,
+  updateEmployeeName,
 } from "@/lib/firestoreRepo";
 import { createEmployeePortalAccount } from "@/lib/auth";
+import { findByPin, hashPin, PIN_PATTERN } from "@/lib/pin";
 import { portalEmail } from "@/lib/constants";
 import type { Employee } from "@/lib/types";
 
@@ -86,6 +97,12 @@ function EmployeeList() {
     );
   }
 
+  function handleNameUpdated(employeeId: string, fullName: string) {
+    setEmployees((prev) =>
+      prev?.map((e) => (e.employeeId === employeeId ? { ...e, fullName } : e)) ?? null
+    );
+  }
+
   async function handleToggleSupervisor(employeeId: string, isSupervisor: boolean) {
     setEmployees((prev) =>
       prev?.map((e) => (e.employeeId === employeeId ? { ...e, isSupervisor } : e)) ?? null
@@ -130,6 +147,7 @@ function EmployeeList() {
             onToggleSupervisor={(isSupervisor) =>
               handleToggleSupervisor(employee.employeeId, isSupervisor)
             }
+            onNameUpdated={(fullName) => handleNameUpdated(employee.employeeId, fullName)}
           />
         ))}
       </ul>
@@ -143,12 +161,14 @@ function EmployeeRow({
   onDelete,
   onPortalLinked,
   onToggleSupervisor,
+  onNameUpdated,
 }: {
   employee: Employee;
   deleting: boolean;
   onDelete: () => void;
   onPortalLinked: (portalUsername: string) => void;
   onToggleSupervisor: (isSupervisor: boolean) => void;
+  onNameUpdated: (fullName: string) => void;
 }) {
   const [settingUp, setSettingUp] = useState(false);
   const [username, setUsername] = useState(() => slugifyUsername(employee.fullName));
@@ -157,6 +177,65 @@ function EmployeeRow({
   const [result, setResult] = useState<{ username: string; password: string } | null>(
     null
   );
+
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(employee.fullName);
+  const [savingName, setSavingName] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [nameSaved, setNameSaved] = useState(false);
+
+  const [newPin, setNewPin] = useState("");
+  const [resettingPin, setResettingPin] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [pinReset, setPinReset] = useState<string | null>(null);
+
+  async function handleSaveName() {
+    const trimmed = editName.trim();
+    if (!trimmed) {
+      setNameError("Name can't be empty.");
+      return;
+    }
+    setSavingName(true);
+    setNameError(null);
+    setNameSaved(false);
+    try {
+      await updateEmployeeName(employee.employeeId, trimmed);
+      onNameUpdated(trimmed);
+      setNameSaved(true);
+    } catch (err) {
+      setNameError(err instanceof Error ? err.message : "Failed to update name");
+    } finally {
+      setSavingName(false);
+    }
+  }
+
+  async function handleResetPin() {
+    if (!PIN_PATTERN.test(newPin)) {
+      setPinError("PIN must be exactly 6 digits.");
+      return;
+    }
+    setResettingPin(true);
+    setPinError(null);
+    setPinReset(null);
+    try {
+      const others = (await fetchAllEmployees()).filter(
+        (e) => e.employeeId !== employee.employeeId
+      );
+      const duplicate = await findByPin(newPin, others);
+      if (duplicate) {
+        setPinError(`This PIN is already in use by ${duplicate.fullName} — pick a different one.`);
+        return;
+      }
+      const { pinHash, pinSalt } = await hashPin(newPin);
+      await resetEmployeePin(employee.employeeId, pinHash, pinSalt);
+      setPinReset(newPin);
+      setNewPin("");
+    } catch (err) {
+      setPinError(err instanceof Error ? err.message : "Failed to reset PIN");
+    } finally {
+      setResettingPin(false);
+    }
+  }
 
   async function handleCreatePortalLogin() {
     setSaving(true);
@@ -227,6 +306,21 @@ function EmployeeRow({
           )}
           <button
             type="button"
+            onClick={() => {
+              setEditing((prev) => !prev);
+              setEditName(employee.fullName);
+              setNameError(null);
+              setNameSaved(false);
+              setNewPin("");
+              setPinError(null);
+              setPinReset(null);
+            }}
+            className="flex items-center gap-1 rounded-lg bg-neutral-800 px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-700"
+          >
+            <Pencil className="h-4 w-4" /> {editing ? "Close" : "Edit"}
+          </button>
+          <button
+            type="button"
             onClick={onDelete}
             disabled={deleting}
             className="flex items-center gap-1 rounded-lg bg-red-900/50 px-3 py-2 text-sm text-red-300 hover:bg-red-900/80 disabled:opacity-50"
@@ -240,6 +334,86 @@ function EmployeeRow({
           </button>
         </div>
       </div>
+
+      {editing && (
+        <div className="mt-3 flex flex-col gap-4 border-t border-neutral-800 pt-3">
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1 text-sm">
+              Full name
+              <input
+                className="rounded-lg bg-neutral-800 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-600"
+                value={editName}
+                onChange={(e) => {
+                  setEditName(e.target.value);
+                  setNameSaved(false);
+                }}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={handleSaveName}
+              disabled={savingName}
+              className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-neutral-700"
+            >
+              {savingName && <Loader2 className="h-4 w-4 animate-spin" />}
+              Save name
+            </button>
+            {nameSaved && (
+              <span className="flex items-center gap-1 text-xs text-emerald-400">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Saved
+              </span>
+            )}
+          </div>
+          {nameError && <p className="text-sm text-red-400">{nameError}</p>}
+
+          <div className="flex flex-col gap-2 border-t border-neutral-800 pt-3">
+            <div>
+              <p className="text-sm font-medium">Reset PIN</p>
+              <p className="text-xs text-neutral-400">
+                PINs are one-way encrypted — there&apos;s no way to see the one
+                currently set on this account, only replace it with a new one.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="flex flex-col gap-1 text-sm">
+                New PIN (6 digits)
+                <input
+                  className="rounded-lg bg-neutral-800 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-600"
+                  value={newPin}
+                  onChange={(e) => {
+                    setNewPin(e.target.value.replace(/\D/g, "").slice(0, 6));
+                    setPinReset(null);
+                  }}
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="123456"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={handleResetPin}
+                disabled={resettingPin}
+                className="flex items-center gap-2 rounded-lg bg-amber-700 px-3 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:bg-neutral-700"
+              >
+                {resettingPin ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                Reset PIN
+              </button>
+            </div>
+            {pinError && <p className="text-sm text-red-400">{pinError}</p>}
+            {pinReset && (
+              <p className="rounded-lg bg-emerald-900/30 px-3 py-2 text-xs text-emerald-300">
+                PIN reset to <span className="font-mono">{pinReset}</span> — relay it
+                to {employee.fullName} now, this won&apos;t be shown again. They can
+                use it at the kiosk right away.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {settingUp && (
         <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-neutral-800 pt-3">

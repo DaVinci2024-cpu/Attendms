@@ -8,6 +8,13 @@
 const PBKDF2_ITERATIONS = 100_000;
 const HASH_BITS = 256;
 
+// Fixed at exactly 6 digits everywhere a PIN is set (enrollment, and an
+// admin resetting one from /admin/employees) — the kiosk's PIN-only mode
+// identifies who's punching by checking the typed PIN against every
+// active employee's hash, so keeping the search space at its full
+// 1,000,000 codes (vs. 10,000 at 4 digits) matters more than it used to.
+export const PIN_PATTERN = /^\d{6}$/;
+
 function toHex(buffer: ArrayBuffer): string {
   return Array.from(new Uint8Array(buffer))
     .map((b) => b.toString(16).padStart(2, "0"))
