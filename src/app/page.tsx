@@ -22,7 +22,7 @@ import { useFaceModels } from "@/hooks/useFaceModels";
 import { detectSingleFaceDescriptor } from "@/lib/faceApi";
 import { findBestMatch, type MatchResult } from "@/lib/faceMatching";
 import { playChime } from "@/lib/chime";
-import { verifyPin } from "@/lib/pin";
+import { findByPin, verifyPin } from "@/lib/pin";
 import { formatDuration } from "@/lib/hours";
 import {
   fetchAllEmployees,
@@ -155,6 +155,11 @@ export default function Home() {
 
   const debounceUntilRef = useRef<Map<string, number>>(new Map());
   const pinAttemptsRef = useRef<Map<string, number>>(new Map());
+  // Wrong-PIN counter for the auto-detect screen, where there's no
+  // employeeId yet to key a per-person count off of (pinAttemptsRef only
+  // applies once someone's already identified, by face match or name
+  // search).
+  const autoDetectPinAttemptsRef = useRef(0);
   const detectingRef = useRef(false);
   const statusRef = useRef<KioskStatus>("idle");
   useEffect(() => {
@@ -329,13 +334,17 @@ export default function Home() {
   }, [cameraReady, modelsLoaded, employees, videoRef]);
 
   // If the camera fails outright while scanning, drop straight into the
-  // name picker instead of leaving the employee stuck looking at a dead
-  // camera view — PIN is always available as a fallback.
+  // auto-detect PIN screen instead of leaving the employee stuck looking
+  // at a dead camera view — same fallback as the manual "Trouble with the
+  // camera?" button.
   useEffect(() => {
     if (status !== "scanning" || !cameraError) return;
     const timer = setTimeout(() => {
-      setEmployeeSearch("");
-      setStatus("select_employee");
+      setCandidate(null);
+      setSelectedEmployee(null);
+      setPin("");
+      setPinError(null);
+      setStatus("pin_entry");
     }, 0);
     return () => clearTimeout(timer);
   }, [status, cameraError]);
@@ -344,7 +353,12 @@ export default function Home() {
     setIntent(punchType);
     setScanHint(null);
     setEmployeeSearch("");
-    setStatus(faceEnabled ? "scanning" : "select_employee");
+    setPin("");
+    setPinError(null);
+    // PIN-only mode skips straight to the auto-detect PIN screen — no
+    // name search first, see handlePinSubmit's no-employee-preselected
+    // branch below.
+    setStatus(faceEnabled ? "scanning" : "pin_entry");
     // Refresh employees/schedule right as a punch starts, so a kiosk tab
     // left open for a while still sees anyone enrolled and today's
     // current schedule (camera/model startup gives this a moment to land
@@ -380,6 +394,7 @@ export default function Home() {
     setSupervisorPin("");
     setSupervisorPinError(null);
     setOverrideReasonText("");
+    autoDetectPinAttemptsRef.current = 0;
   }
 
   function backToIdle() {
@@ -390,8 +405,49 @@ export default function Home() {
   }
 
   async function handlePinSubmit() {
+    if (!intent) return;
     const employee = candidate?.employee ?? selectedEmployee;
-    if (!employee || !intent) return;
+
+    if (!employee) {
+      // Auto-detect: no one was pre-selected by a face match or a manual
+      // name search, so the PIN itself has to say who this is — checked
+      // against every active employee's own hash, since each has their
+      // own salt (see findByPin).
+      setVerifyingPin(true);
+      const match = await findByPin(pin, employees.filter((e) => e.active));
+      setVerifyingPin(false);
+
+      if (!match) {
+        const attempts = (autoDetectPinAttemptsRef.current += 1);
+
+        if (attempts >= MAX_PIN_ATTEMPTS) {
+          recordSuspiciousEvent({
+            eventId: `evt_${crypto.randomUUID()}`,
+            employeeId: "unknown",
+            employeeName: "Unrecognized PIN",
+            timestamp: new Date().toISOString(),
+            reason: "wrong_pin",
+            attempts,
+            kioskId: KIOSK_ID,
+          }).catch(() => {});
+          playChime("error");
+          setStatus("suspicious");
+          setTimeout(() => backToIdle(), 3000);
+          return;
+        }
+
+        playChime("error");
+        setPinError(`PIN not recognized (attempt ${attempts}/${MAX_PIN_ATTEMPTS})`);
+        setPin("");
+        return;
+      }
+
+      autoDetectPinAttemptsRef.current = 0;
+      pinAttemptsRef.current.set(match.employeeId, 0);
+      setPinError(null);
+      await evaluateAndFinalize(match, intent);
+      return;
+    }
 
     setVerifyingPin(true);
     const pinCorrect = await verifyPin(pin, employee.pinSalt, employee.pinHash);
@@ -719,8 +775,11 @@ export default function Home() {
                     type="button"
                     onClick={() => {
                       setScanHint(null);
-                      setEmployeeSearch("");
-                      setStatus("select_employee");
+                      setCandidate(null);
+                      setSelectedEmployee(null);
+                      setPin("");
+                      setPinError(null);
+                      setStatus("pin_entry");
                     }}
                     className="text-xs text-blue-400 underline hover:text-blue-300"
                   >
@@ -780,11 +839,13 @@ export default function Home() {
                 </div>
               )}
 
-              {status === "pin_entry" && (candidate || selectedEmployee) && (
+              {status === "pin_entry" && (
                 <div className="flex flex-col items-center gap-4">
                   <div className="flex items-center gap-2 text-lg font-medium">
                     <UserCheck className="h-5 w-5 text-blue-400" />
-                    Hi {(candidate?.employee ?? selectedEmployee)?.fullName}, enter your PIN
+                    {candidate || selectedEmployee
+                      ? `Hi ${(candidate?.employee ?? selectedEmployee)?.fullName}, enter your PIN`
+                      : "Enter your PIN"}
                   </div>
                   <PinPad
                     value={pin}
@@ -793,12 +854,29 @@ export default function Home() {
                     disabled={verifyingPin}
                   />
                   {pinError && <p className="text-sm text-red-400">{pinError}</p>}
+                  {/* Auto-detect mode (no name search first) — a "wrong PIN"
+                      here just means it didn't match anyone at all, so offer
+                      a way to identify by name instead of retrying blind. */}
+                  {!candidate && !selectedEmployee && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPinError(null);
+                        setPin("");
+                        setEmployeeSearch("");
+                        setStatus("select_employee");
+                      }}
+                      className="text-xs text-blue-400 underline hover:text-blue-300"
+                    >
+                      Search your name instead
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={backToIdle}
                     className="text-sm text-neutral-400 hover:text-neutral-200"
                   >
-                    Not you? Cancel
+                    {candidate || selectedEmployee ? "Not you? Cancel" : "Cancel"}
                   </button>
                 </div>
               )}

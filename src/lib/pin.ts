@@ -54,3 +54,22 @@ export async function verifyPin(
   const candidate = await derive(pin, fromHex(pinSalt));
   return candidate === pinHash;
 }
+
+// Finds whichever of `people` this PIN belongs to, by checking it against
+// each of their stored hashes in parallel (each person has their own
+// salt, so this can't be short-circuited into a single comparison the
+// way a normal password lookup could). Used both to auto-detect who's
+// punching from PIN alone (kiosk), and to reject a PIN at enrollment
+// that's already in use by someone else — see the PIN-uniqueness note in
+// src/app/enroll/page.tsx.
+export async function findByPin<T extends { pinSalt: string; pinHash: string }>(
+  pin: string,
+  people: T[]
+): Promise<T | null> {
+  const matches: (T | null)[] = await Promise.all(
+    people.map(async (person): Promise<T | null> =>
+      (await verifyPin(pin, person.pinSalt, person.pinHash)) ? person : null
+    )
+  );
+  return matches.find((person) => person !== null) ?? null;
+}
