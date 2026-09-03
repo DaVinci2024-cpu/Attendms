@@ -31,6 +31,7 @@ import type {
   ShiftNote,
   ShiftSupervisorPermissionSettings,
   ShiftSupervisorGrant,
+  ScheduleExemption,
 } from "./types";
 
 function companyDoc() {
@@ -91,6 +92,10 @@ function shiftSupervisorPermissionsDoc() {
 
 function shiftSupervisorGrantsCol(): CollectionReference {
   return collection(getDb(), "companies", COMPANY_ID, "shiftSupervisorGrants");
+}
+
+function scheduleExemptionsCol(): CollectionReference {
+  return collection(getDb(), "companies", COMPANY_ID, "scheduleExemptions");
 }
 
 // Called once the admin is signed in (rules require auth to write the
@@ -428,4 +433,20 @@ export async function fetchShiftSupervisorGrant(
 ): Promise<ShiftSupervisorGrant | null> {
   const snapshot = await getDoc(doc(shiftSupervisorGrantsCol(), uid));
   return snapshot.exists() ? (snapshot.data() as ShiftSupervisorGrant) : null;
+}
+
+// World-readable — the kiosk (never signed in) reads this whole
+// collection to check unscheduled punch-ins against, same as employees/
+// schedules/attendance.
+export async function fetchAllScheduleExemptions(): Promise<ScheduleExemption[]> {
+  const snapshot = await getDocs(scheduleExemptionsCol());
+  return snapshot.docs.map((d) => d.data() as ScheduleExemption);
+}
+
+export async function saveScheduleExemption(exemption: ScheduleExemption): Promise<void> {
+  await setDoc(doc(scheduleExemptionsCol(), exemption.employeeId), exemption);
+}
+
+export async function revokeScheduleExemption(employeeId: string): Promise<void> {
+  await deleteDoc(doc(scheduleExemptionsCol(), employeeId));
 }

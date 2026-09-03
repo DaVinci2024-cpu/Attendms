@@ -26,6 +26,7 @@ import { verifyPin } from "@/lib/pin";
 import { formatDuration } from "@/lib/hours";
 import {
   fetchAllEmployees,
+  fetchAllScheduleExemptions,
   fetchAuthPolicy,
   fetchKioskDisplaySettings,
   fetchLastAttendanceForEmployee,
@@ -40,6 +41,7 @@ import {
   resolveShiftForPunchIn,
   type ResolvedShift,
 } from "@/lib/punchRules";
+import { scheduleExemptionIsActive } from "@/lib/permissions";
 import { mondayOf, toWeekId } from "@/lib/week";
 import {
   COMPANY_NAME,
@@ -53,6 +55,7 @@ import type {
   AttendanceOverride,
   Employee,
   PunchType,
+  ScheduleExemption,
   ShiftSupervisor,
   WeekSchedule,
 } from "@/lib/types";
@@ -114,6 +117,11 @@ export default function Home() {
   // signs in, can check it — see firestore.rules).
   const [attendanceLogs, setAttendanceLogs] = useState<AttendanceLog[]>([]);
   const [schedule, setSchedule] = useState<WeekSchedule | null>(null);
+  // Keyed by employeeId. Checked only when someone who isn't on today's
+  // schedule at all tries to punch in — see evaluateAndFinalize below.
+  const [scheduleExemptions, setScheduleExemptions] = useState<
+    Record<string, ScheduleExemption>
+  >({});
   const [online, setOnline] = useState(
     () => typeof navigator === "undefined" || navigator.onLine
   );
@@ -177,6 +185,18 @@ export default function Home() {
       // Non-critical for a refresh — punch-rule checks just fall back to
       // whatever schedule was last loaded successfully.
     }
+
+    try {
+      const exemptions = await fetchAllScheduleExemptions();
+      const map: Record<string, ScheduleExemption> = {};
+      exemptions.forEach((e) => {
+        map[e.employeeId] = e;
+      });
+      setScheduleExemptions(map);
+    } catch {
+      // Non-critical for a refresh — falls back to whatever was last
+      // loaded successfully, same as schedule above.
+    }
   }, []);
 
   useEffect(() => {
@@ -226,6 +246,19 @@ export default function Home() {
       } catch (err) {
         if (cancelled || !navigator.onLine) return;
         console.error("Failed to load schedule:", err);
+      }
+
+      try {
+        const exemptions = await fetchAllScheduleExemptions();
+        if (cancelled) return;
+        const map: Record<string, ScheduleExemption> = {};
+        exemptions.forEach((e) => {
+          map[e.employeeId] = e;
+        });
+        setScheduleExemptions(map);
+      } catch (err) {
+        if (cancelled || !navigator.onLine) return;
+        console.error("Failed to load schedule exemptions:", err);
       }
     }
 
@@ -444,6 +477,17 @@ export default function Home() {
         return;
       }
 
+      // Not on today's schedule at all (as opposed to scheduled but late,
+      // which still needs a supervisor) — an active exemption skips the
+      // block entirely, same as the no-schedule-posted case above.
+      if (
+        !resolution &&
+        scheduleExemptionIsActive(scheduleExemptions[employee.employeeId] ?? null)
+      ) {
+        finalizePunch(employee, punchType, null, null, true);
+        return;
+      }
+
       const supervisor = resolution
         ? resolution.supervisor
         : findCurrentSupervisor(schedule, mondayOf(now), now);
@@ -527,7 +571,8 @@ export default function Home() {
     employee: Employee,
     punchType: PunchType,
     resolution: ResolvedShift | null,
-    override: AttendanceOverride | null
+    override: AttendanceOverride | null,
+    scheduleExempt = false
   ) {
     // On punch-out, find the matching punch-in for this shift (the most
     // recent prior log for this employee) to show how long they worked.
@@ -561,6 +606,7 @@ export default function Home() {
           }
         : {}),
       ...(override ? { override } : {}),
+      ...(scheduleExempt ? { scheduleExempt: true } : {}),
     };
 
     // Same reasoning as above: don't block the success screen on a network

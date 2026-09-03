@@ -89,6 +89,11 @@ export interface AttendanceLog {
   scheduledSupervisorEmployeeId?: string | null;
   scheduledSupervisorName?: string | null;
   override?: AttendanceOverride;
+  // True when this punch_in went through despite no schedule for the day
+  // because the employee holds an active ScheduleExemption — kept as its
+  // own flag (distinct from `override`, which always names a supervisor)
+  // since no supervisor was involved in allowing this one.
+  scheduleExempt?: boolean;
 }
 
 export interface SuspiciousEvent {
@@ -217,7 +222,8 @@ export type Permission =
   | "manage_kiosk_settings"
   | "view_reports"
   | "manage_permissions"
-  | "manage_announcements";
+  | "manage_announcements"
+  | "manage_schedule_exemptions";
 
 export interface PermissionGrant {
   uid: string;
@@ -258,6 +264,33 @@ export interface ShiftSupervisorGrant {
   rowId: string;
   columnId: string;
   updatedAt: string;
+}
+
+// Lets one specific employee punch in even when they aren't on today's
+// schedule at all — skips straight past the "go find your supervisor"
+// flow (src/lib/punchRules.ts / src/app/page.tsx), for people whose work
+// genuinely doesn't follow the posted schedule (on-call, roaming staff,
+// etc). Keyed by employeeId rather than uid — unlike PermissionGrant,
+// this has to be checked by the kiosk, which never signs in and doesn't
+// require the employee to have a portal account at all.
+//
+// Only waives the "not scheduled at all" block. An employee who *is*
+// scheduled but more than 15 minutes late still needs a supervisor —
+// this isn't a way around lateness accountability, just around the
+// schedule requirement for people who aren't meant to be on it.
+//
+// startsAtMillis/expiresAtMillis mirror PermissionGrant's temporary-
+// access window (null expiresAtMillis = permanent). Managing these
+// requires the manage_schedule_exemptions permission, which — like every
+// other permission — can itself be delegated via Roles & Permissions
+// without handing someone full schedule or permissions management.
+export interface ScheduleExemption {
+  employeeId: string;
+  employeeName: string;
+  startsAtMillis: number | null;
+  expiresAtMillis: number | null;
+  grantedBy: string; // uid of whoever granted it
+  grantedAt: string; // ISO
 }
 
 export interface Kiosk {

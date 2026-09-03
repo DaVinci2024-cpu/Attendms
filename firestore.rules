@@ -205,6 +205,18 @@ service cloud.firestore {
           get(/databases/$(database)/documents/companies/$(companyId)/employees/$(resource.data.employeeId)).data.authUid == request.auth.uid;
       }
 
+      // Lets one specific employee punch in even when they aren't on
+      // today's schedule at all — see src/lib/types.ts ScheduleExemption.
+      // World-readable for the same reason as employees/schedules/
+      // attendance above: the kiosk (which never signs in) has to check
+      // it before deciding whether to block an unscheduled punch-in.
+      // Keyed by employeeId, not uid, so it works for employees with no
+      // portal account.
+      match /scheduleExemptions/{employeeId} {
+        allow read: if true;
+        allow write: if hasPermission("manage_schedule_exemptions");
+      }
+
       // A short note attached to one day+shift cell of a posted schedule.
       // Any signed-in user can read/post (not restricted to their own
       // shift — deliberately loose for a small team) but the author field
