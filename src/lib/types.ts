@@ -24,7 +24,12 @@ export interface Employee {
   role: "employee" | "admin";
   active: boolean;
   createdAt: string;
-  consent: ConsentRecord;
+  // Absent when this employee has no face descriptors — face capture is
+  // optional at enrollment (see src/app/enroll/page.tsx), and a consent
+  // record specifically for biometric processing wouldn't mean anything
+  // for someone with no biometric data collected. Set only alongside a
+  // non-empty faceDescriptors.
+  consent?: ConsentRecord;
   // Self-service portal login (separate from the kiosk PIN). Absent until
   // an admin sets one up via /admin/employees.
   portalUsername?: string;

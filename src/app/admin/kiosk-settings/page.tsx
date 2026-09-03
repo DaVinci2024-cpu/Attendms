@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   CheckCircle2,
   Fingerprint,
@@ -11,6 +12,7 @@ import {
 } from "lucide-react";
 import { RequireAdmin } from "@/components/RequireAdmin";
 import {
+  fetchAllEmployees,
   fetchAuthPolicy,
   fetchKioskDisplaySettings,
   saveAuthPolicy,
@@ -212,6 +214,15 @@ function IdentificationMethodsForm() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Coverage note for the face toggle, same idea as the fingerprint
+  // toggle's "not set up yet" — face capture is optional at enrollment
+  // (see /enroll), so turning facial recognition on doesn't mean every
+  // employee can actually be recognized by it. Fetched independently of
+  // the policy above; a failure here just means the note doesn't show,
+  // not a broken settings page.
+  const [missingFaceCount, setMissingFaceCount] = useState<number | null>(null);
+  const [activeEmployeeCount, setActiveEmployeeCount] = useState<number | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     fetchAuthPolicy()
@@ -227,6 +238,23 @@ function IdentificationMethodsForm() {
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAllEmployees()
+      .then((emps) => {
+        if (cancelled) return;
+        const active = emps.filter((e) => e.active);
+        setActiveEmployeeCount(active.length);
+        setMissingFaceCount(active.filter((e) => e.faceDescriptors.length === 0).length);
+      })
+      .catch(() => {
+        // Non-critical — the coverage note just won't show.
       });
     return () => {
       cancelled = true;
@@ -281,6 +309,19 @@ function IdentificationMethodsForm() {
                 setSaved(false);
               }}
             />
+            {faceEnabled && missingFaceCount !== null && missingFaceCount > 0 && (
+              <p className="rounded-lg bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
+                {missingFaceCount} of {activeEmployeeCount} employees
+                {missingFaceCount === 1 ? " has" : " have"} no face data enrolled —
+                face capture is optional at enrollment, so they&apos;ll need to use
+                PIN or name search to punch in until re-enrolled with a face
+                capture from{" "}
+                <Link href="/enroll" className="underline hover:no-underline">
+                  Enroll employee
+                </Link>
+                .
+              </p>
+            )}
             <ToggleRow
               icon={Fingerprint}
               label="Fingerprint"

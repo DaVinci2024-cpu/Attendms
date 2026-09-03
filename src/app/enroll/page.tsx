@@ -7,7 +7,12 @@ import { RequireAdmin } from "@/components/RequireAdmin";
 import { useCamera } from "@/hooks/useCamera";
 import { useFaceModels } from "@/hooks/useFaceModels";
 import { detectSingleFaceDescriptor } from "@/lib/faceApi";
-import { createEmployee, ensureCompanyDoc, fetchAllEmployees } from "@/lib/firestoreRepo";
+import {
+  createEmployee,
+  ensureCompanyDoc,
+  fetchAllEmployees,
+  fetchAuthPolicy,
+} from "@/lib/firestoreRepo";
 import { findByPin, hashPin, PIN_PATTERN } from "@/lib/pin";
 import { CONSENT_POLICY_VERSION, ADMIN_EMAIL } from "@/lib/constants";
 import type { Employee } from "@/lib/types";
@@ -23,8 +28,18 @@ export default function EnrollPage() {
 }
 
 function EnrollForm() {
-  const { videoRef, ready, error: cameraError } = useCamera();
-  const { loaded: modelsLoaded, error: modelsError } = useFaceModels();
+  // Face capture is optional — a company that isn't using facial
+  // recognition (PIN-only kiosk) shouldn't be forced through a camera
+  // permission prompt for every hire. Starts off so no camera/model
+  // loading happens until we actually know it's wanted; defaults to
+  // whatever the kiosk's own facial-recognition setting currently is
+  // once that loads (a company actively using face recognition should
+  // see this pre-checked; a PIN-only one shouldn't).
+  const [captureFace, setCaptureFace] = useState(false);
+  const [kioskFaceEnabled, setKioskFaceEnabled] = useState(false);
+
+  const { videoRef, ready, error: cameraError } = useCamera(captureFace);
+  const { loaded: modelsLoaded, error: modelsError } = useFaceModels(captureFace);
 
   const [fullName, setFullName] = useState("");
   const [pinCode, setPinCode] = useState("");
@@ -44,6 +59,24 @@ function EnrollForm() {
     ensureCompanyDoc();
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetchAuthPolicy()
+      .then((policy) => {
+        if (cancelled) return;
+        const faceEnabled = policy?.faceEnabled ?? false;
+        setKioskFaceEnabled(faceEnabled);
+        setCaptureFace(faceEnabled);
+      })
+      .catch(() => {
+        // Leave the default (off) — worst case the admin has to check
+        // the box themselves, not a broken enroll flow.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const canCapture =
     ready && modelsLoaded && !capturing && descriptors.length < MAX_SNAPSHOTS;
 
@@ -51,10 +84,9 @@ function EnrollForm() {
   const canSave =
     fullName.trim().length > 0 &&
     pinValid &&
-    consentChecked &&
     recordedBy.trim().length > 0 &&
-    descriptors.length > 0 &&
-    saveState !== "saving";
+    saveState !== "saving" &&
+    (!captureFace || (descriptors.length > 0 && consentChecked));
 
   async function handleCapture() {
     if (!videoRef.current) return;
@@ -91,6 +123,7 @@ function EnrollForm() {
 
       const now = new Date().toISOString();
       const { pinHash, pinSalt } = await hashPin(pinCode);
+      const hasFaceData = captureFace && descriptors.length > 0;
       const employee: Employee = {
         employeeId: `emp_${crypto.randomUUID()}`,
         fullName: fullName.trim(),
@@ -100,11 +133,15 @@ function EnrollForm() {
         role,
         active: true,
         createdAt: now,
-        consent: {
-          consentedAt: now,
-          policyVersion: CONSENT_POLICY_VERSION,
-          recordedBy: recordedBy.trim(),
-        },
+        ...(hasFaceData
+          ? {
+              consent: {
+                consentedAt: now,
+                policyVersion: CONSENT_POLICY_VERSION,
+                recordedBy: recordedBy.trim(),
+              },
+            }
+          : {}),
       };
       await createEmployee(employee);
       setSaveState("saved");
@@ -123,45 +160,66 @@ function EnrollForm() {
       <div>
         <h1 className="text-2xl font-semibold">Enroll employee</h1>
         <p className="text-sm text-neutral-400">
-          Capture 1-3 face snapshots per employee. Only the extracted
-          embeddings are stored — raw images never leave the browser.
+          Face capture is optional — an employee can always punch in with
+          just their PIN, with or without one.
         </p>
       </div>
 
-      <CameraView ref={videoRef} ready={ready} error={cameraError}>
-        {descriptors.length > 0 && (
-          <div className="absolute right-2 top-2 rounded-full bg-black/70 px-3 py-1 text-xs text-white">
-            {descriptors.length}/{MAX_SNAPSHOTS} captured
-          </div>
-        )}
-      </CameraView>
+      <label className="flex items-start gap-2 rounded-xl bg-neutral-900 px-4 py-3 text-sm">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={captureFace}
+          onChange={(e) => setCaptureFace(e.target.checked)}
+        />
+        <span>
+          <span className="font-medium">Capture face snapshots for this employee</span>
+          <span className="mt-0.5 block text-xs text-neutral-400">
+            {kioskFaceEnabled
+              ? "Facial recognition is currently on for this kiosk — leave this checked so they can be recognized by it."
+              : "Facial recognition is currently off for this kiosk, so this only matters if it's turned on later — skipping it is fine, they'll use their PIN either way."}
+          </span>
+        </span>
+      </label>
 
-      {modelsError && (
-        <p className="text-sm text-red-400">
-          Failed to load face recognition models: {modelsError}
-        </p>
-      )}
+      {captureFace && (
+        <>
+          <CameraView ref={videoRef} ready={ready} error={cameraError}>
+            {descriptors.length > 0 && (
+              <div className="absolute right-2 top-2 rounded-full bg-black/70 px-3 py-1 text-xs text-white">
+                {descriptors.length}/{MAX_SNAPSHOTS} captured
+              </div>
+            )}
+          </CameraView>
 
-      <button
-        type="button"
-        onClick={handleCapture}
-        disabled={!canCapture}
-        className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-3 font-medium text-white transition disabled:cursor-not-allowed disabled:bg-neutral-700"
-      >
-        {capturing ? (
-          <Loader2 className="h-5 w-5 animate-spin" />
-        ) : (
-          <Camera className="h-5 w-5" />
-        )}
-        Capture snapshot
-      </button>
-      {captureStatus && (
-        <p className="-mt-4 text-sm text-amber-400">{captureStatus}</p>
-      )}
-      {!modelsLoaded && !modelsError && (
-        <p className="-mt-4 text-sm text-neutral-400">
-          Loading face recognition models...
-        </p>
+          {modelsError && (
+            <p className="text-sm text-red-400">
+              Failed to load face recognition models: {modelsError}
+            </p>
+          )}
+
+          <button
+            type="button"
+            onClick={handleCapture}
+            disabled={!canCapture}
+            className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-3 font-medium text-white transition disabled:cursor-not-allowed disabled:bg-neutral-700"
+          >
+            {capturing ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <Camera className="h-5 w-5" />
+            )}
+            Capture snapshot
+          </button>
+          {captureStatus && (
+            <p className="-mt-4 text-sm text-amber-400">{captureStatus}</p>
+          )}
+          {!modelsLoaded && !modelsError && (
+            <p className="-mt-4 text-sm text-neutral-400">
+              Loading face recognition models...
+            </p>
+          )}
+        </>
       )}
 
       <div className="flex flex-col gap-4 rounded-xl bg-neutral-900 p-4">
@@ -199,38 +257,41 @@ function EnrollForm() {
           </select>
         </label>
 
-        <div className="flex flex-col gap-2 rounded-lg bg-neutral-800 p-3 text-sm">
-          <p className="text-neutral-300">
-            <strong>Consent to biometric data processing</strong> (data
-            handling policy {CONSENT_POLICY_VERSION}, aligned with Uganda&apos;s
-            Data Protection and Privacy Act, 2019 — have this reviewed by
-            counsel before relying on it): this employee&apos;s face is
-            captured live and converted, in this browser, into numeric
-            descriptors used only to match their face for attendance
-            punches at this company. The photo itself is never saved,
-            uploaded, or shared — only the descriptors and this consent
-            record are stored. The employee (or an admin on their behalf)
-            may request deletion of their descriptors and this consent
-            record at any time from the Manage employees page, which
-            removes them from future matching immediately.
-          </p>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={consentChecked}
-              onChange={(e) => setConsentChecked(e.target.checked)}
-            />
-            Employee has reviewed and consents to this policy
-          </label>
-          <label className="flex flex-col gap-1">
-            Recorded by (admin email)
-            <input
-              className="rounded-lg bg-neutral-700 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-600"
-              value={recordedBy}
-              onChange={(e) => setRecordedBy(e.target.value)}
-            />
-          </label>
-        </div>
+        {captureFace && (
+          <div className="flex flex-col gap-2 rounded-lg bg-neutral-800 p-3 text-sm">
+            <p className="text-neutral-300">
+              <strong>Consent to biometric data processing</strong> (data
+              handling policy {CONSENT_POLICY_VERSION}, aligned with Uganda&apos;s
+              Data Protection and Privacy Act, 2019 — have this reviewed by
+              counsel before relying on it): this employee&apos;s face is
+              captured live and converted, in this browser, into numeric
+              descriptors used only to match their face for attendance
+              punches at this company. The photo itself is never saved,
+              uploaded, or shared — only the descriptors and this consent
+              record are stored. The employee (or an admin on their behalf)
+              may request deletion of their descriptors and this consent
+              record at any time from the Manage employees page, which
+              removes them from future matching immediately.
+            </p>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={consentChecked}
+                onChange={(e) => setConsentChecked(e.target.checked)}
+              />
+              Employee has reviewed and consents to this policy
+            </label>
+          </div>
+        )}
+
+        <label className="flex flex-col gap-1 text-sm">
+          Recorded by (admin email)
+          <input
+            className="rounded-lg bg-neutral-800 px-3 py-2 text-base outline-none focus:ring-2 focus:ring-blue-600"
+            value={recordedBy}
+            onChange={(e) => setRecordedBy(e.target.value)}
+          />
+        </label>
 
         <button
           type="button"

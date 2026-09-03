@@ -78,10 +78,13 @@ HTTPS (e.g. Vercel, or any host with a TLS certificate).
 ## Using it
 
 - **`/enroll`** — admin-only (sign in with the account from setup step
-  2.5). Capture 1-3 face snapshots for a new employee, set their PIN,
-  record consent, and save. Only the extracted numeric embeddings and a
-  PBKDF2 hash of the PIN are stored; raw video frames and the plaintext
-  PIN never leave the browser.
+  2.5). Set a new employee's name and 6-digit PIN, and save. Capturing
+  1-3 face snapshots is optional (defaults to on/off based on whether
+  facial recognition is currently enabled for the kiosk, see below) —
+  an employee can always punch in with just their PIN either way. Only
+  the extracted numeric embeddings and a PBKDF2 hash of the PIN are
+  stored; raw video frames and the plaintext PIN never leave the
+  browser.
 - **`/admin/employees`** — admin-only. Lists enrolled employees and lets
   you delete an employee's descriptors + consent record entirely (not just
   mark them inactive) — this is the deletion path required for the
