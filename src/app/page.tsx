@@ -51,7 +51,6 @@ import {
 import type {
   AttendanceLog,
   AttendanceOverride,
-  AuthMethod,
   Employee,
   PunchType,
   ShiftSupervisor,
@@ -84,12 +83,16 @@ function isDebounced(debounceUntilMap: Map<string, number>, employeeId: string):
 
 export default function Home() {
   const [status, setStatus] = useState<KioskStatus>("idle");
-  const [authMethod, setAuthMethod] = useState<AuthMethod>("face_and_pin");
+  // Whether facial recognition is turned on at all (admin setting) — PIN
+  // is always required regardless, either as the sole method or as
+  // confirmation after a face match. Defaults to off until the policy
+  // loads, so a slow/failed load never quietly turns the camera on.
+  const [faceEnabled, setFaceEnabled] = useState(false);
   // The camera should only ever run while actually face-scanning — never
   // on the idle screen, the PIN-only name picker, the punch-rules screens,
-  // and never at all in pin_only mode.
+  // and never at all with facial recognition turned off.
   const usingCamera =
-    authMethod !== "pin_only" &&
+    faceEnabled &&
     status !== "idle" &&
     status !== "select_employee" &&
     status !== "blocked" &&
@@ -100,7 +103,7 @@ export default function Home() {
     ready: cameraReady,
     error: cameraError,
   } = useCamera(usingCamera);
-  const { loaded: modelsLoaded, error: modelsError } = useFaceModels();
+  const { loaded: modelsLoaded, error: modelsError } = useFaceModels(faceEnabled);
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   // Deliberately local/session-only, not fetched from Firestore on a
@@ -210,7 +213,7 @@ export default function Home() {
       try {
         const policy = await fetchAuthPolicy();
         if (cancelled) return;
-        if (policy?.method) setAuthMethod(policy.method);
+        setFaceEnabled(policy?.faceEnabled ?? false);
       } catch (err) {
         if (cancelled || !navigator.onLine) return;
         console.error("Failed to load auth policy:", err);
@@ -292,29 +295,23 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [cameraReady, modelsLoaded, employees, videoRef]);
 
-  // If the camera fails outright while scanning and the policy allows a PIN
-  // fallback, drop straight into the name picker instead of leaving the
-  // employee stuck looking at a dead camera view.
+  // If the camera fails outright while scanning, drop straight into the
+  // name picker instead of leaving the employee stuck looking at a dead
+  // camera view — PIN is always available as a fallback.
   useEffect(() => {
-    if (
-      status !== "scanning" ||
-      authMethod !== "face_with_pin_fallback" ||
-      !cameraError
-    ) {
-      return;
-    }
+    if (status !== "scanning" || !cameraError) return;
     const timer = setTimeout(() => {
       setEmployeeSearch("");
       setStatus("select_employee");
     }, 0);
     return () => clearTimeout(timer);
-  }, [status, authMethod, cameraError]);
+  }, [status, cameraError]);
 
   function startPunch(punchType: PunchType) {
     setIntent(punchType);
     setScanHint(null);
     setEmployeeSearch("");
-    setStatus(authMethod === "pin_only" ? "select_employee" : "scanning");
+    setStatus(faceEnabled ? "scanning" : "select_employee");
     // Refresh employees/schedule right as a punch starts, so a kiosk tab
     // left open for a while still sees anyone enrolled and today's
     // current schedule (camera/model startup gives this a moment to land
@@ -672,19 +669,17 @@ export default function Home() {
                   {scanHint && (
                     <p className="text-center text-xs text-amber-400">{scanHint}</p>
                   )}
-                  {authMethod === "face_with_pin_fallback" && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setScanHint(null);
-                        setEmployeeSearch("");
-                        setStatus("select_employee");
-                      }}
-                      className="text-xs text-blue-400 underline hover:text-blue-300"
-                    >
-                      Trouble with the camera? Enter PIN instead
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScanHint(null);
+                      setEmployeeSearch("");
+                      setStatus("select_employee");
+                    }}
+                    className="text-xs text-blue-400 underline hover:text-blue-300"
+                  >
+                    Trouble with the camera? Enter PIN instead
+                  </button>
                   <button
                     type="button"
                     onClick={backToIdle}

@@ -189,15 +189,20 @@ export interface KioskDisplaySettings {
   updatedAt: string;
 }
 
-// How the kiosk identifies whoever is punching. PIN confirmation is always
-// required regardless of method — this only controls whether/when face
-// matching is used to find the candidate first.
-export type AuthMethod = "face_and_pin" | "pin_only" | "face_with_pin_fallback";
-
+// Which identification methods the kiosk offers. PIN is not a field here
+// on purpose — it's always required (both as its own fallback and as the
+// confirmation step after any biometric match), never something the admin
+// can turn off. fingerprintEnabled is stored so the setting exists ahead
+// of time, but nothing in the kiosk reads it yet — there's no fingerprint
+// reader integration until real hardware is chosen; the admin UI keeps
+// that toggle disabled with an explanatory note rather than let it look
+// like it does something.
+//
 // Public-readable for the same reason as KioskDisplaySettings above — kept
 // as its own document so the kiosk can read it with no login.
 export interface AuthPolicy {
-  method: AuthMethod;
+  faceEnabled: boolean;
+  fingerprintEnabled: boolean;
   updatedAt: string;
 }
 
