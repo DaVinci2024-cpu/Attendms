@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Loader2, Trophy } from "lucide-react";
 import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
+import { PageHeader } from "@/components/PageHeader";
 import { fetchAllAttendance, fetchAllEmployees, fetchWeekSchedule } from "@/lib/firestoreRepo";
 import { averageScore, computeEmployeePerformance, type EmployeePerformance } from "@/lib/performance";
 import { weekIdsBack } from "@/lib/week";
@@ -90,31 +91,29 @@ function PerformancePage() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-4 py-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Performance</h1>
-          <p className="text-sm text-neutral-400">
-            Attendance vs. the posted schedule, and how often records needed a
-            correction.
-          </p>
-        </div>
-        <div className="flex items-center gap-1 rounded-lg bg-neutral-900 p-1">
-          {PERIOD_OPTIONS.map((opt) => (
-            <button
-              key={opt.weeks}
-              type="button"
-              onClick={() => setWeeksBack(opt.weeks)}
-              className={`rounded-md px-3 py-1.5 text-sm transition ${
-                weeksBack === opt.weeks
-                  ? "bg-neutral-800 text-white"
-                  : "text-neutral-400 hover:text-neutral-200"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <PageHeader
+        title="Performance"
+        subtitle="Attendance vs. the posted schedule, and how often records needed a correction."
+        accent="emerald"
+        actions={
+          <div className="flex items-center gap-1 rounded-lg bg-neutral-900 p-1">
+            {PERIOD_OPTIONS.map((opt) => (
+              <button
+                key={opt.weeks}
+                type="button"
+                onClick={() => setWeeksBack(opt.weeks)}
+                className={`rounded-md px-3 py-1.5 text-sm transition ${
+                  weeksBack === opt.weeks
+                    ? "bg-neutral-800 text-white"
+                    : "text-neutral-400 hover:text-neutral-200"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        }
+      />
 
       <p className="rounded-lg bg-neutral-900 px-3 py-2 text-xs text-neutral-500">
         Score = attendance rate (days worked ÷ days scheduled) minus a penalty

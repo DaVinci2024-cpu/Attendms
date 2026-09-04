@@ -1,8 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { History, LogOut, Loader2, Pencil, ShieldCheck, X } from "lucide-react";
+import {
+  CalendarClock,
+  CheckCircle2,
+  Clock3,
+  History,
+  LogOut,
+  Loader2,
+  Pencil,
+  ShieldCheck,
+  Users,
+  X,
+} from "lucide-react";
 import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
+import { PageHeader } from "@/components/PageHeader";
+import { StatPill } from "@/components/StatPill";
+import { StatusBadge } from "@/components/StatusBadge";
 import {
   closeShift,
   editAttendanceLog,
@@ -10,6 +24,7 @@ import {
   fetchAllEmployees,
 } from "@/lib/firestoreRepo";
 import { pairSessions, formatDuration } from "@/lib/hours";
+import { punchStatus } from "@/lib/attendanceStatus";
 import type { AttendanceLog, Employee } from "@/lib/types";
 
 export default function AdminDashboardPage() {
@@ -107,9 +122,26 @@ function Dashboard() {
     0
   );
 
+  // Share of filtered punch-ins that went through cleanly — no supervisor
+  // override, no unscheduled walk-in, no after-the-fact correction. Same
+  // classification StatusBadge uses per-row below, so the summary number
+  // and the row badges always agree with each other.
+  const onTimeRate =
+    filteredSessions.length === 0
+      ? null
+      : Math.round(
+          (filteredSessions.filter((s) => punchStatus(s.punchIn).tone === "success").length /
+            filteredSessions.length) *
+            100
+        );
+
   return (
     <div className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-8">
-      <h1 className="text-2xl font-semibold">Attendance dashboard</h1>
+      <PageHeader
+        title="Attendance dashboard"
+        subtitle="Who's clocked in, punch history, hours worked."
+        accent="amber"
+      />
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 
@@ -119,6 +151,33 @@ function Dashboard() {
         </div>
       ) : (
         <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatPill
+              icon={Users}
+              value={currentlyIn.length}
+              label="Clocked in now"
+              tone="emerald"
+            />
+            <StatPill
+              icon={CalendarClock}
+              value={filteredSessions.length}
+              label={filteredSessions.length === 1 ? "Session" : "Sessions"}
+              tone="blue"
+            />
+            <StatPill
+              icon={Clock3}
+              value={formatDuration(totalMs)}
+              label="Total hours"
+              tone="purple"
+            />
+            <StatPill
+              icon={CheckCircle2}
+              value={onTimeRate !== null ? `${onTimeRate}%` : "—"}
+              label="On-time rate"
+              tone="amber"
+            />
+          </div>
+
           <section className="rounded-xl bg-neutral-900 p-4">
             <h2 className="mb-2 font-medium">
               Currently clocked in ({currentlyIn.length})
@@ -290,9 +349,11 @@ function TimeCell({
   onEditClick: () => void;
 }) {
   const editCount = log.edits?.length ?? 0;
+  const status = punchStatus(log);
   return (
     <span className="flex items-center gap-1.5">
       {localTime(log.timestamp)}
+      <StatusBadge label={status.label} tone={status.tone} />
       {editCount > 0 && (
         <span
           title={`Edited ${editCount} time${editCount === 1 ? "" : "s"}`}

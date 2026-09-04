@@ -2,18 +2,27 @@
 
 import { useEffect, useState } from "react";
 import {
+  CalendarClock,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
   KeyRound,
   Loader2,
   Pencil,
   RefreshCw,
   ShieldCheck,
   Trash2,
+  UserRound,
 } from "lucide-react";
 import { RequireAdmin } from "@/components/RequireAdmin";
+import { PageHeader } from "@/components/PageHeader";
+import { StatPill } from "@/components/StatPill";
+import { StatusBadge } from "@/components/StatusBadge";
 import {
   deleteEmployee,
   fetchAllEmployees,
+  fetchAttendanceForEmployee,
   fetchEmployeeByPortalUsername,
   linkEmployeePortalAccount,
   resetEmployeePin,
@@ -22,6 +31,8 @@ import {
 } from "@/lib/firestoreRepo";
 import { createEmployeePortalAccount } from "@/lib/auth";
 import { findByPin, hashPin, PIN_PATTERN } from "@/lib/pin";
+import { averageTimeOfDay, formatDuration, pairSessions, type WorkSession } from "@/lib/hours";
+import { punchStatus } from "@/lib/attendanceStatus";
 import { portalEmail } from "@/lib/constants";
 import type { Employee } from "@/lib/types";
 
@@ -119,8 +130,8 @@ function EmployeeList() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-      <h1 className="text-2xl font-semibold">Employees</h1>
+    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-4 py-8">
+      <PageHeader title="Employees" accent="purple" />
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 
@@ -188,6 +199,8 @@ function EmployeeRow({
   const [resettingPin, setResettingPin] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinReset, setPinReset] = useState<string | null>(null);
+
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   async function handleSaveName() {
     const trimmed = editName.trim();
@@ -306,6 +319,13 @@ function EmployeeRow({
           )}
           <button
             type="button"
+            onClick={() => setDetailsOpen((prev) => !prev)}
+            className="flex items-center gap-1 rounded-lg bg-neutral-800 px-3 py-2 text-sm text-neutral-300 hover:bg-neutral-700"
+          >
+            <UserRound className="h-4 w-4" /> {detailsOpen ? "Hide" : "Details"}
+          </button>
+          <button
+            type="button"
             onClick={() => {
               setEditing((prev) => !prev);
               setEditName(employee.fullName);
@@ -334,6 +354,8 @@ function EmployeeRow({
           </button>
         </div>
       </div>
+
+      {detailsOpen && <EmployeeHistoryPanel employee={employee} />}
 
       {editing && (
         <div className="mt-3 flex flex-col gap-4 border-t border-neutral-800 pt-3">
@@ -472,5 +494,159 @@ function EmployeeRow({
         </div>
       )}
     </li>
+  );
+}
+
+const HISTORY_PAGE_SIZE = 6;
+
+// Self-contained profile view: fetches this one employee's attendance on
+// first open (not part of the main list load, since most rows never get
+// expanded) and summarizes it the same way as the dashboard — same
+// StatPill/StatusBadge/punchStatus building blocks, so a status always
+// means the same thing wherever it shows up.
+function EmployeeHistoryPanel({ employee }: { employee: Employee }) {
+  const [sessions, setSessions] = useState<WorkSession[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAttendanceForEmployee(employee.employeeId)
+      .then((logs) => {
+        if (!cancelled) setSessions(pairSessions(logs));
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load history");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [employee.employeeId]);
+
+  if (error) {
+    return (
+      <p className="mt-3 border-t border-neutral-800 pt-3 text-sm text-red-400">{error}</p>
+    );
+  }
+
+  if (sessions === null) {
+    return (
+      <div className="mt-3 flex justify-center border-t border-neutral-800 py-6">
+        <Loader2 className="h-5 w-5 animate-spin text-neutral-400" />
+      </div>
+    );
+  }
+
+  const completed = sessions.filter((s) => s.punchOut !== null);
+  const avgCheckIn = averageTimeOfDay(sessions.map((s) => s.punchIn.timestamp));
+  const avgCheckOut = averageTimeOfDay(
+    completed.map((s) => s.punchOut?.timestamp).filter((t): t is string => t !== undefined)
+  );
+  const onTimeRate =
+    sessions.length === 0
+      ? null
+      : Math.round(
+          (sessions.filter((s) => punchStatus(s.punchIn).tone === "success").length /
+            sessions.length) *
+            100
+        );
+
+  const pageCount = Math.max(1, Math.ceil(sessions.length / HISTORY_PAGE_SIZE));
+  const pageSessions = sessions.slice(
+    page * HISTORY_PAGE_SIZE,
+    page * HISTORY_PAGE_SIZE + HISTORY_PAGE_SIZE
+  );
+
+  return (
+    <div className="mt-3 flex flex-col gap-3 border-t border-neutral-800 pt-3">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <StatPill
+          icon={CalendarClock}
+          value={sessions.length}
+          label="Total attendance"
+          tone="blue"
+        />
+        <StatPill icon={Clock3} value={avgCheckIn ?? "—"} label="Avg check-in" tone="emerald" />
+        <StatPill icon={Clock3} value={avgCheckOut ?? "—"} label="Avg check-out" tone="purple" />
+        <StatPill
+          icon={CheckCircle2}
+          value={onTimeRate !== null ? `${onTimeRate}%` : "—"}
+          label="On-time rate"
+          tone="amber"
+        />
+      </div>
+
+      {sessions.length === 0 ? (
+        <p className="text-sm text-neutral-400">No attendance recorded yet.</p>
+      ) : (
+        <>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {pageSessions.map((s) => {
+              const status = punchStatus(s.punchIn);
+              return (
+                <div
+                  key={s.punchIn.logId}
+                  className="rounded-lg bg-neutral-800/60 px-3 py-2 text-sm"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">
+                      {new Date(s.punchIn.timestamp).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </span>
+                    <StatusBadge label={status.label} tone={status.tone} />
+                  </div>
+                  <div className="mt-1 flex items-center justify-between text-xs text-neutral-400">
+                    <span>
+                      In{" "}
+                      {new Date(s.punchIn.timestamp).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                      {" · Out "}
+                      {s.punchOut
+                        ? new Date(s.punchOut.timestamp).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : "still in"}
+                    </span>
+                    <span>{s.durationMs !== null ? formatDuration(s.durationMs) : "—"}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {pageCount > 1 && (
+            <div className="flex items-center justify-center gap-3 text-sm text-neutral-400">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0}
+                className="rounded-lg bg-neutral-800 p-1.5 hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span>
+                Page {page + 1} of {pageCount}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                disabled={page >= pageCount - 1}
+                className="rounded-lg bg-neutral-800 p-1.5 hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }

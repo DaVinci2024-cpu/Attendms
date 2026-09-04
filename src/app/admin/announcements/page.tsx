@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, Megaphone, Send, Trash2 } from "lucide-react";
 import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
+import { PageHeader } from "@/components/PageHeader";
 import {
   deleteAnnouncement,
   fetchAnnouncements,
@@ -91,12 +92,11 @@ function AnnouncementsManager() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-      <div>
-        <h1 className="text-2xl font-semibold">Announcements</h1>
-        <p className="text-sm text-neutral-400">
-          Posted here shows up in every employee&apos;s portal, newest first.
-        </p>
-      </div>
+      <PageHeader
+        title="Announcements"
+        subtitle="Posted here shows up in every employee's portal, newest first."
+        accent="orange"
+      />
 
       {!canPost && (
         <p className="rounded-lg bg-neutral-900 px-3 py-2 text-sm text-neutral-400">

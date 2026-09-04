@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { LucideIcon } from "lucide-react";
 import {
   CalendarDays,
   LayoutDashboard,
@@ -10,6 +11,7 @@ import {
   Users,
 } from "lucide-react";
 import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
+import { PageHeader } from "@/components/PageHeader";
 
 export default function AdminHomePage() {
   return (
@@ -19,108 +21,116 @@ export default function AdminHomePage() {
   );
 }
 
+const TILE_ICON_CLASSES = {
+  amber: "bg-amber-500/15 text-amber-400",
+  pink: "bg-pink-500/15 text-pink-400",
+  blue: "bg-blue-500/15 text-blue-400",
+  purple: "bg-purple-500/15 text-purple-400",
+  cyan: "bg-cyan-500/15 text-cyan-400",
+  rose: "bg-rose-500/15 text-rose-400",
+} as const;
+
+function HubTile({
+  href,
+  icon: Icon,
+  color,
+  title,
+  description,
+}: {
+  href: string;
+  icon: LucideIcon;
+  color: keyof typeof TILE_ICON_CLASSES;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="group flex items-center gap-4 rounded-xl bg-neutral-900 p-5 transition hover:-translate-y-0.5 hover:bg-neutral-800 hover:shadow-lg hover:shadow-black/30"
+    >
+      <span
+        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition group-hover:scale-105 ${TILE_ICON_CLASSES[color]}`}
+      >
+        <Icon className="h-5 w-5" />
+      </span>
+      <div>
+        <p className="font-medium">{title}</p>
+        <p className="text-sm text-neutral-400">{description}</p>
+      </div>
+    </Link>
+  );
+}
+
 function AdminHub() {
   const { has } = usePermissions();
 
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-      <div>
-        <h1 className="text-2xl font-semibold">Admin</h1>
-        <p className="text-sm text-neutral-400">
-          Everything for running this company&apos;s attendance system.
-        </p>
-      </div>
+      <PageHeader
+        title="Admin"
+        subtitle="Everything for running this company's attendance system."
+        accent="violet"
+      />
 
       <div className="grid gap-4 sm:grid-cols-2">
         {(has("view_reports") || has("edit_attendance")) && (
-          <Link
+          <HubTile
             href="/admin/dashboard"
-            className="flex items-center gap-3 rounded-xl bg-neutral-900 p-5 transition hover:bg-neutral-800"
-          >
-            <LayoutDashboard className="h-6 w-6 text-amber-400" />
-            <div>
-              <p className="font-medium">Attendance dashboard</p>
-              <p className="text-sm text-neutral-400">
-                Who&apos;s clocked in, punch history, hours worked
-              </p>
-            </div>
-          </Link>
+            icon={LayoutDashboard}
+            color="amber"
+            title="Attendance dashboard"
+            description="Who's clocked in, punch history, hours worked"
+          />
         )}
 
         {has("manage_schedule") && (
-          <Link
+          <HubTile
             href="/admin/schedule"
-            className="flex items-center gap-3 rounded-xl bg-neutral-900 p-5 transition hover:bg-neutral-800"
-          >
-            <CalendarDays className="h-6 w-6 text-pink-400" />
-            <div>
-              <p className="font-medium">Schedule</p>
-              <p className="text-sm text-neutral-400">
-                Spreadsheet-style weekly schedule editor
-              </p>
-            </div>
-          </Link>
+            icon={CalendarDays}
+            color="pink"
+            title="Schedule"
+            description="Spreadsheet-style weekly schedule editor"
+          />
         )}
 
         {has("manage_employees") && (
-          <Link
+          <HubTile
             href="/enroll"
-            className="flex items-center gap-3 rounded-xl bg-neutral-900 p-5 transition hover:bg-neutral-800"
-          >
-            <UserPlus className="h-6 w-6 text-blue-400" />
-            <div>
-              <p className="font-medium">Enroll employee</p>
-              <p className="text-sm text-neutral-400">
-                Capture face snapshots, PIN, and consent
-              </p>
-            </div>
-          </Link>
+            icon={UserPlus}
+            color="blue"
+            title="Enroll employee"
+            description="Set a name, PIN, and optional face snapshots"
+          />
         )}
 
         {has("manage_employees") && (
-          <Link
+          <HubTile
             href="/admin/employees"
-            className="flex items-center gap-3 rounded-xl bg-neutral-900 p-5 transition hover:bg-neutral-800"
-          >
-            <Users className="h-6 w-6 text-purple-400" />
-            <div>
-              <p className="font-medium">Manage employees</p>
-              <p className="text-sm text-neutral-400">
-                View enrolled employees, portal logins, delete a profile
-              </p>
-            </div>
-          </Link>
+            icon={Users}
+            color="purple"
+            title="Manage employees"
+            description="View enrolled employees, portal logins, delete a profile"
+          />
         )}
 
         {has("manage_kiosk_settings") && (
-          <Link
+          <HubTile
             href="/admin/kiosk-settings"
-            className="flex items-center gap-3 rounded-xl bg-neutral-900 p-5 transition hover:bg-neutral-800"
-          >
-            <Settings className="h-6 w-6 text-cyan-400" />
-            <div>
-              <p className="font-medium">Kiosk display</p>
-              <p className="text-sm text-neutral-400">
-                Customize the headline and notice shown on the kiosk screen
-              </p>
-            </div>
-          </Link>
+            icon={Settings}
+            color="cyan"
+            title="Kiosk display"
+            description="Customize the headline and notice shown on the kiosk screen"
+          />
         )}
 
         {has("manage_permissions") && (
-          <Link
+          <HubTile
             href="/admin/permissions"
-            className="flex items-center gap-3 rounded-xl bg-neutral-900 p-5 transition hover:bg-neutral-800"
-          >
-            <ShieldCheck className="h-6 w-6 text-rose-400" />
-            <div>
-              <p className="font-medium">Roles & permissions</p>
-              <p className="text-sm text-neutral-400">
-                Grant admins/employees specific capabilities, with optional
-                time limits
-              </p>
-            </div>
-          </Link>
+            icon={ShieldCheck}
+            color="rose"
+            title="Roles & permissions"
+            description="Grant admins/employees specific capabilities, with optional time limits"
+          />
         )}
       </div>
     </div>

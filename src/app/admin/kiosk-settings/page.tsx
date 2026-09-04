@@ -19,18 +19,17 @@ import {
   saveKioskDisplaySettings,
 } from "@/lib/firestoreRepo";
 import { COMPANY_NAME } from "@/lib/constants";
+import { PageHeader } from "@/components/PageHeader";
 
 export default function KioskSettingsPage() {
   return (
     <RequireAdmin>
       <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-        <div>
-          <h1 className="text-2xl font-semibold">Kiosk display</h1>
-          <p className="text-sm text-neutral-400">
-            What employees see on the kiosk screen, and how they identify
-            themselves before they punch in or out.
-          </p>
-        </div>
+        <PageHeader
+          title="Kiosk display"
+          subtitle="What employees see on the kiosk screen, and how they identify themselves before they punch in or out."
+          accent="cyan"
+        />
         <DisplaySettingsForm />
         <IdentificationMethodsForm />
       </div>

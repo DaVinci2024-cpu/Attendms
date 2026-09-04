@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Camera, CheckCircle2, Loader2 } from "lucide-react";
 import { CameraView } from "@/components/CameraView";
 import { RequireAdmin } from "@/components/RequireAdmin";
+import { PageHeader } from "@/components/PageHeader";
 import { useCamera } from "@/hooks/useCamera";
 import { useFaceModels } from "@/hooks/useFaceModels";
 import { detectSingleFaceDescriptor } from "@/lib/faceApi";
@@ -157,13 +158,11 @@ function EnrollForm() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-      <div>
-        <h1 className="text-2xl font-semibold">Enroll employee</h1>
-        <p className="text-sm text-neutral-400">
-          Face capture is optional — an employee can always punch in with
-          just their PIN, with or without one.
-        </p>
-      </div>
+      <PageHeader
+        title="Enroll employee"
+        subtitle="Face capture is optional — an employee can always punch in with just their PIN, with or without one."
+        accent="blue"
+      />
 
       <label className="flex items-start gap-2 rounded-xl bg-neutral-900 px-4 py-3 text-sm">
         <input

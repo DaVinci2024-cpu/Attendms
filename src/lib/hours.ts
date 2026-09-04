@@ -73,6 +73,21 @@ export function pairSessions(logs: AttendanceLog[]): WorkSession[] {
   );
 }
 
+// Averages a list of ISO timestamps' local time-of-day (ignoring the
+// date part) — e.g. "usually punches in around 8:52 AM". Returns null
+// for an empty list, since there's nothing to average.
+export function averageTimeOfDay(timestamps: string[]): string | null {
+  if (timestamps.length === 0) return null;
+  const totalMinutes = timestamps.reduce((sum, iso) => {
+    const d = new Date(iso);
+    return sum + d.getHours() * 60 + d.getMinutes();
+  }, 0);
+  const avgMinutes = Math.round(totalMinutes / timestamps.length) % (24 * 60);
+  const d = new Date();
+  d.setHours(Math.floor(avgMinutes / 60), avgMinutes % 60, 0, 0);
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 export function formatDuration(ms: number): string {
   const totalMinutes = Math.round(ms / 60000);
   const hours = Math.floor(totalMinutes / 60);

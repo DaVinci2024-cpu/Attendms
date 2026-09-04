@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
 import { SchedulePrintView } from "@/components/SchedulePrintView";
+import { PageHeader } from "@/components/PageHeader";
 import {
   fetchAllEmployees,
   fetchAvailabilityForWeek,
@@ -30,6 +31,7 @@ import {
   saveWeekSchedule,
 } from "@/lib/firestoreRepo";
 import { cellAssignments, defaultColumns } from "@/lib/schedule";
+import { columnColor, type ColumnColor } from "@/lib/columnColors";
 import { mondayOf, toWeekId } from "@/lib/week";
 import type {
   AvailabilityEntry,
@@ -450,34 +452,37 @@ function ScheduleGrid() {
   return (
     <>
     <div className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-4 py-8 print:hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Schedule</h1>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => goToWeek(-1)}
-            className="rounded-lg bg-neutral-800 p-2 hover:bg-neutral-700"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <span className="text-sm text-neutral-400">Week of {weekId}</span>
-          <button
-            type="button"
-            onClick={() => goToWeek(1)}
-            className="rounded-lg bg-neutral-800 p-2 hover:bg-neutral-700"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => window.print()}
-            disabled={!schedule}
-            className="flex items-center gap-1.5 rounded-lg bg-neutral-800 px-3 py-2 text-sm hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Printer className="h-4 w-4" /> Print
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Schedule"
+        accent="pink"
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => goToWeek(-1)}
+              className="rounded-lg bg-neutral-800 p-2 hover:bg-neutral-700"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="text-sm text-neutral-400">Week of {weekId}</span>
+            <button
+              type="button"
+              onClick={() => goToWeek(1)}
+              className="rounded-lg bg-neutral-800 p-2 hover:bg-neutral-700"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              disabled={!schedule}
+              className="flex items-center gap-1.5 rounded-lg bg-neutral-800 px-3 py-2 text-sm hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Printer className="h-4 w-4" /> Print
+            </button>
+          </>
+        }
+      />
 
       {!canEdit && (
         <p className="rounded-lg bg-neutral-900 px-3 py-2 text-sm text-neutral-400">
@@ -561,60 +566,67 @@ function ScheduleGrid() {
                   <th className="min-w-[160px] border-b border-neutral-800 px-3 py-2 text-neutral-400">
                     Day
                   </th>
-                  {schedule.columns.map((col) => (
-                    <th
-                      key={col.columnId}
-                      className="border-b border-neutral-800 px-3 py-2"
-                    >
-                      {canEdit ? (
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-1">
-                            <input
-                              className="w-32 rounded bg-neutral-800 px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-blue-600"
-                              value={col.label}
-                              onChange={(e) => renameColumn(col.columnId, e.target.value)}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removeColumn(col.columnId)}
-                              className="text-neutral-500 hover:text-red-400"
-                              title="Remove column"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                          <div className="flex items-center gap-1 text-xs font-normal text-neutral-500">
-                            <input
-                              type="time"
-                              value={col.startTime ?? ""}
-                              onChange={(e) =>
-                                setColumnTime(col.columnId, "startTime", e.target.value)
-                              }
-                              className="w-[6.5rem] rounded bg-neutral-800 px-1 py-0.5 text-neutral-300 outline-none focus:ring-2 focus:ring-blue-600"
-                            />
-                            <span>–</span>
-                            <input
-                              type="time"
-                              value={col.endTime ?? ""}
-                              onChange={(e) =>
-                                setColumnTime(col.columnId, "endTime", e.target.value)
-                              }
-                              className="w-[6.5rem] rounded bg-neutral-800 px-1 py-0.5 text-neutral-300 outline-none focus:ring-2 focus:ring-blue-600"
-                            />
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <div>{col.label}</div>
-                          {col.startTime && col.endTime && (
-                            <div className="text-xs font-normal text-neutral-500">
-                              {col.startTime}–{col.endTime}
+                  {schedule.columns.map((col, colIndex) => {
+                    const color = columnColor(colIndex);
+                    return (
+                      <th
+                        key={col.columnId}
+                        className={`border-b border-b-neutral-800 border-t-2 px-3 py-2 ${color.topBorder}`}
+                      >
+                        {canEdit ? (
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-1">
+                              <span className={`h-2 w-2 shrink-0 rounded-full ${color.bar}`} />
+                              <input
+                                className="w-32 rounded bg-neutral-800 px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-blue-600"
+                                value={col.label}
+                                onChange={(e) => renameColumn(col.columnId, e.target.value)}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => removeColumn(col.columnId)}
+                                className="text-neutral-500 hover:text-red-400"
+                                title="Remove column"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
                             </div>
-                          )}
-                        </div>
-                      )}
-                    </th>
-                  ))}
+                            <div className="flex items-center gap-1 text-xs font-normal text-neutral-500">
+                              <input
+                                type="time"
+                                value={col.startTime ?? ""}
+                                onChange={(e) =>
+                                  setColumnTime(col.columnId, "startTime", e.target.value)
+                                }
+                                className="w-[6.5rem] rounded bg-neutral-800 px-1 py-0.5 text-neutral-300 outline-none focus:ring-2 focus:ring-blue-600"
+                              />
+                              <span>–</span>
+                              <input
+                                type="time"
+                                value={col.endTime ?? ""}
+                                onChange={(e) =>
+                                  setColumnTime(col.columnId, "endTime", e.target.value)
+                                }
+                                className="w-[6.5rem] rounded bg-neutral-800 px-1 py-0.5 text-neutral-300 outline-none focus:ring-2 focus:ring-blue-600"
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <div className={`flex items-center gap-1.5 font-medium ${color.text}`}>
+                              <span className={`h-2 w-2 shrink-0 rounded-full ${color.bar}`} />
+                              {col.label}
+                            </div>
+                            {col.startTime && col.endTime && (
+                              <div className="text-xs font-normal text-neutral-500">
+                                {col.startTime}–{col.endTime}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </th>
+                    );
+                  })}
                   {canEdit && (
                     <th className="border-b border-neutral-800 px-3 py-2">
                       <button
@@ -652,12 +664,13 @@ function ScheduleGrid() {
                         row.label
                       )}
                     </td>
-                    {schedule.columns.map((col) => (
+                    {schedule.columns.map((col, colIndex) => (
                       <td key={col.columnId} className="px-3 py-2 align-top">
                         <CellAssignments
                           assignments={cellAssignments(row.cells, col.columnId)}
                           employees={employees}
                           editable={canEdit}
+                          color={columnColor(colIndex)}
                           onAdd={(employee) =>
                             addAssignment(row.rowId, col.columnId, employee)
                           }
@@ -778,6 +791,7 @@ function CellAssignments({
   assignments,
   employees,
   editable,
+  color,
   onAdd,
   onRemove,
   notes,
@@ -786,6 +800,7 @@ function CellAssignments({
   assignments: ScheduleAssignment[];
   employees: Employee[];
   editable: boolean;
+  color: ColumnColor;
   onAdd: (employee: Employee) => void;
   onRemove: (employeeId: string) => void;
   notes: ShiftNote[];
@@ -816,7 +831,7 @@ function CellAssignments({
       {assignments.map((a) => (
         <span
           key={a.employeeId}
-          className="flex items-center justify-between gap-2 rounded bg-neutral-800 px-2 py-1 text-xs text-neutral-100"
+          className={`flex items-center justify-between gap-2 rounded border px-2 py-1 text-xs text-neutral-100 ${color.chipBg} ${color.chipBorder}`}
         >
           <span className="flex items-center gap-1">
             {supervisorIds.has(a.employeeId) && (

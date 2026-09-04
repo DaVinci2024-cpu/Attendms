@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, Clock, Loader2, ShieldCheck, Trash2, Unlock } from "lucide-react";
 import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
+import { PageHeader } from "@/components/PageHeader";
 import {
   fetchAllEmployees,
   fetchAllPermissionGrants,
@@ -76,14 +77,11 @@ function PermissionsManager() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-      <div>
-        <h1 className="text-2xl font-semibold">Roles &amp; permissions</h1>
-        <p className="text-sm text-neutral-400">
-          Grant specific capabilities to an employee&apos;s portal account,
-          with an optional time limit. Full admin accounts already have
-          every capability and aren&apos;t managed here.
-        </p>
-      </div>
+      <PageHeader
+        title="Roles & permissions"
+        subtitle="Grant specific capabilities to an employee's portal account, with an optional time limit. Full admin accounts already have every capability and aren't managed here."
+        accent="rose"
+      />
 
       <ShiftSupervisorSettingsCard />
 
