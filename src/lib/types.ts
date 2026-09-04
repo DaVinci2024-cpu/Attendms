@@ -99,6 +99,36 @@ export interface AttendanceLog {
   // own flag (distinct from `override`, which always names a supervisor)
   // since no supervisor was involved in allowing this one.
   scheduleExempt?: boolean;
+  // Captured from the kiosk device's own browser geolocation, not the
+  // employee's — the kiosk is the one physical thing responsible for
+  // being at the workplace. Null when location couldn't be captured at
+  // all (rare once the kiosk's one-time consent is granted); distance/
+  // withinRadius are null specifically when no LocationPolicy has been
+  // configured yet, so there's nothing to compare against.
+  location?: PunchLocation | null;
+  // Light, passive signal only — see the LocationPolicy comment below on
+  // why this isn't real device verification yet.
+  device?: PunchDevice | null;
+}
+
+export interface PunchLocation {
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number | null;
+  distanceMeters: number | null;
+  withinRadius: boolean | null;
+}
+
+// A locally-generated, per-browser identifier plus a coarse parsed
+// User-Agent label (e.g. "Android · Chrome") — enough to notice "this
+// employee's punches just started coming from a different device", not
+// enough to prove "this is the tablet we issued". Real device
+// verification needs actual kiosk pairing (a registered credential per
+// physical device, see the "Known gaps" note in README) — deliberately
+// out of scope for this lighter first pass.
+export interface PunchDevice {
+  deviceId: string;
+  summary: string;
 }
 
 export interface SuspiciousEvent {
@@ -221,6 +251,24 @@ export interface AuthPolicy {
   faceEnabled: boolean;
   fingerprintEnabled: boolean;
   updatedAt: string;
+}
+
+// The workplace's coordinates + how far from them a punch is still
+// considered on-site — set once by an admin standing at the actual
+// kiosk (see /admin/kiosk-settings), then checked against every punch's
+// captured location (src/app/page.tsx). Absent entirely means the
+// geofence check is skipped — same fail-open-until-configured pattern
+// as the schedule requirement.
+//
+// Public-readable for the same reason as KioskDisplaySettings above —
+// the kiosk (never signed in) needs it to check itself against.
+export interface LocationPolicy {
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+  updatedAt: string;
+  updatedBy: string;
+  updatedByName: string;
 }
 
 // The permission catalog. `adminUids` on Company remain permanent

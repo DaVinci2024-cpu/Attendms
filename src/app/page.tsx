@@ -7,6 +7,7 @@ import {
   Loader2,
   LogIn,
   LogOut,
+  MapPinOff,
   Megaphone,
   Search,
   ShieldAlert,
@@ -30,6 +31,7 @@ import {
   fetchAuthPolicy,
   fetchKioskDisplaySettings,
   fetchLastAttendanceForEmployee,
+  fetchLocationPolicy,
   fetchWeekSchedule,
   recordPunch,
   recordSuspiciousEvent,
@@ -42,6 +44,12 @@ import {
   type ResolvedShift,
 } from "@/lib/punchRules";
 import { scheduleExemptionIsActive } from "@/lib/permissions";
+import {
+  getDeviceId,
+  haversineDistanceMeters,
+  requestPosition,
+  summarizeUserAgent,
+} from "@/lib/geolocation";
 import { mondayOf, toWeekId } from "@/lib/week";
 import {
   COMPANY_NAME,
@@ -54,11 +62,19 @@ import type {
   AttendanceLog,
   AttendanceOverride,
   Employee,
+  LocationPolicy,
+  PunchDevice,
+  PunchLocation,
   PunchType,
   ScheduleExemption,
   ShiftSupervisor,
   WeekSchedule,
 } from "@/lib/types";
+
+// Refresh interval for the kiosk's own cached location — the kiosk is a
+// fixed device, so this only needs to catch it actually being physically
+// moved, not track continuous movement like a phone would.
+const LOCATION_REFRESH_MS = 5 * 60 * 1000;
 
 type KioskStatus =
   | "idle"
@@ -122,6 +138,20 @@ export default function Home() {
   const [scheduleExemptions, setScheduleExemptions] = useState<
     Record<string, ScheduleExemption>
   >({});
+  const [locationPolicy, setLocationPolicy] = useState<LocationPolicy | null>(null);
+  // Whether this kiosk device has granted the browser location prompt at
+  // all — gates the entire punch UI (see the early return near the
+  // bottom of this component). "checking" is also the state on every
+  // reload even after a prior grant; browsers answer that near-instantly
+  // from their own stored permission, so it's not a real wait in practice.
+  const [locationConsent, setLocationConsent] = useState<"checking" | "granted" | "denied">(
+    "checking"
+  );
+  const [kioskPosition, setKioskPosition] = useState<{
+    latitude: number;
+    longitude: number;
+    accuracyMeters: number | null;
+  } | null>(null);
   const [online, setOnline] = useState(
     () => typeof navigator === "undefined" || navigator.onLine
   );
@@ -202,6 +232,12 @@ export default function Home() {
       // Non-critical for a refresh — falls back to whatever was last
       // loaded successfully, same as schedule above.
     }
+
+    try {
+      setLocationPolicy(await fetchLocationPolicy());
+    } catch {
+      // Non-critical for a refresh — same reasoning as above.
+    }
   }, []);
 
   useEffect(() => {
@@ -265,6 +301,15 @@ export default function Home() {
         if (cancelled || !navigator.onLine) return;
         console.error("Failed to load schedule exemptions:", err);
       }
+
+      try {
+        const policy = await fetchLocationPolicy();
+        if (cancelled) return;
+        setLocationPolicy(policy);
+      } catch (err) {
+        if (cancelled || !navigator.onLine) return;
+        console.error("Failed to load location policy:", err);
+      }
     }
 
     loadInitialData();
@@ -282,6 +327,89 @@ export default function Home() {
       window.removeEventListener("offline", handleOffline);
     };
   }, [refreshData]);
+
+  // Nothing on this screen is usable until the kiosk itself has granted
+  // (or been denied) the browser's location permission — see the early
+  // return near the bottom of this component. Once granted, browsers
+  // remember it per-origin, so this resolves near-instantly on every
+  // later visit rather than re-prompting. The "Try again" button bumps
+  // this token to re-run the check (and sets locationConsent back to
+  // "checking" itself, synchronously, from its own click handler —
+  // rather than this effect doing it, which would run before the first
+  // await on every retry).
+  const [locationRetryToken, setLocationRetryToken] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function checkLocation() {
+      try {
+        const position = await requestPosition();
+        if (cancelled) return;
+        setKioskPosition({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracyMeters: position.coords.accuracy,
+        });
+        setLocationConsent("granted");
+      } catch {
+        if (!cancelled) setLocationConsent("denied");
+      }
+    }
+    checkLocation();
+    return () => {
+      cancelled = true;
+    };
+  }, [locationRetryToken]);
+
+  // The kiosk is a fixed device, so this only needs to notice it's been
+  // physically moved — not track continuous movement. A transient
+  // failure here just keeps the last known position rather than losing
+  // location entirely over one bad reading.
+  useEffect(() => {
+    if (locationConsent !== "granted") return;
+    const interval = setInterval(() => {
+      requestPosition()
+        .then((position) => {
+          setKioskPosition({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracyMeters: position.coords.accuracy,
+          });
+        })
+        .catch(() => {});
+    }, LOCATION_REFRESH_MS);
+    return () => clearInterval(interval);
+  }, [locationConsent]);
+
+  // Compares the kiosk's currently cached position against the
+  // configured workplace (if any) — recomputed fresh wherever it's
+  // called rather than threaded through as state, so it's always based
+  // on whatever's most current at that moment.
+  function computePunchLocation(): PunchLocation | null {
+    if (!kioskPosition) return null;
+    if (!locationPolicy) {
+      return {
+        latitude: kioskPosition.latitude,
+        longitude: kioskPosition.longitude,
+        accuracyMeters: kioskPosition.accuracyMeters,
+        distanceMeters: null,
+        withinRadius: null,
+      };
+    }
+    const distanceMeters = haversineDistanceMeters(
+      kioskPosition.latitude,
+      kioskPosition.longitude,
+      locationPolicy.latitude,
+      locationPolicy.longitude
+    );
+    return {
+      latitude: kioskPosition.latitude,
+      longitude: kioskPosition.longitude,
+      accuracyMeters: kioskPosition.accuracyMeters,
+      distanceMeters: Math.round(distanceMeters),
+      withinRadius: distanceMeters <= locationPolicy.radiusMeters,
+    };
+  }
 
   // Continuous detection loop — only runs once an employee has picked
   // Punch In or Punch Out (status "scanning").
@@ -495,6 +623,27 @@ export default function Home() {
   async function evaluateAndFinalize(employee: Employee, punchType: PunchType) {
     const now = new Date();
 
+    // Checked before anything employee-specific — this is about whether
+    // the kiosk itself is where it's supposed to be, which applies the
+    // same way to every punch through it, in or out.
+    const punchLocation = computePunchLocation();
+    if (!punchLocation) {
+      setBlockedReason("Confirming this kiosk's location — try again in a moment.");
+      setOverridable(false);
+      setStatus("blocked");
+      return;
+    }
+    if (punchLocation.withinRadius === false) {
+      setPendingShift(null);
+      setRequiredSupervisor(findCurrentSupervisor(schedule, mondayOf(now), now));
+      setOverridable(true);
+      setBlockedReason(
+        `This kiosk isn't at the workplace (about ${punchLocation.distanceMeters}m away).`
+      );
+      setStatus("blocked");
+      return;
+    }
+
     let lastLog: AttendanceLog | null = null;
     try {
       lastLog = await fetchLastAttendanceForEmployee(employee.employeeId);
@@ -650,6 +799,11 @@ export default function Home() {
       }
     }
 
+    const device: PunchDevice = {
+      deviceId: getDeviceId(),
+      summary: summarizeUserAgent(navigator.userAgent),
+    };
+
     const log: AttendanceLog = {
       logId: `log_${crypto.randomUUID()}`,
       employeeId: employee.employeeId,
@@ -662,6 +816,8 @@ export default function Home() {
       pinConfirmed: true,
       kioskId: KIOSK_ID,
       syncedOffline: !online,
+      location: computePunchLocation(),
+      device,
       ...(punchType === "punch_in"
         ? {
             scheduledShiftEnd: resolution?.scheduledEndIso ?? null,
@@ -691,6 +847,43 @@ export default function Home() {
       setSuccessInfo(null);
       setStatus("idle");
     }, 2500);
+  }
+
+  // Nothing below this point is reachable without the kiosk's own
+  // location consent — every punch gets checked against it (see
+  // evaluateAndFinalize), so there's no useful "PIN-only fallback" here
+  // the way there is for facial recognition; without a location, the
+  // check itself can't run at all.
+  if (locationConsent === "checking") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-black">
+        <Loader2 className="h-8 w-8 animate-spin text-neutral-600" />
+      </div>
+    );
+  }
+
+  if (locationConsent === "denied") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-black px-4 text-center text-white">
+        <MapPinOff className="h-12 w-12 text-neutral-600" />
+        <h1 className="text-xl font-semibold">Location access required</h1>
+        <p className="max-w-sm text-sm text-neutral-400">
+          This kiosk needs permission to check its own location before
+          anyone can punch in or out. Enable location access for this site
+          in your browser&apos;s settings, then try again.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setLocationConsent("checking");
+            setLocationRetryToken((t) => t + 1);
+          }}
+          className="rounded-lg bg-neutral-800 px-4 py-2.5 text-sm font-medium text-neutral-200 hover:bg-neutral-700"
+        >
+          Try again
+        </button>
+      </div>
+    );
   }
 
   return (

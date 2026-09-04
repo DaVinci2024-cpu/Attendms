@@ -7,6 +7,7 @@ import {
   Fingerprint,
   KeyRound,
   Loader2,
+  MapPin,
   ScanFace,
   Save,
 } from "lucide-react";
@@ -14,9 +15,13 @@ import {
   fetchAllEmployees,
   fetchAuthPolicy,
   fetchKioskDisplaySettings,
+  fetchLocationPolicy,
   saveAuthPolicy,
   saveKioskDisplaySettings,
+  saveLocationPolicy,
 } from "@/lib/firestoreRepo";
+import { requestPosition } from "@/lib/geolocation";
+import { usePermissions } from "@/components/RequireAdmin";
 import { COMPANY_NAME } from "@/lib/constants";
 import { PageHeader } from "@/components/PageHeader";
 
@@ -30,6 +35,7 @@ export default function KioskSettingsPage() {
       />
       <DisplaySettingsForm />
       <IdentificationMethodsForm />
+      <LocationPolicyForm />
     </div>
   );
 }
@@ -362,6 +368,186 @@ function IdentificationMethodsForm() {
             <p className="flex items-center gap-1 text-sm text-emerald-400">
               <CheckCircle2 className="h-4 w-4" /> Saved — the kiosk will use
               this the next time it loads.
+            </p>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+const DEFAULT_RADIUS_METERS = 150;
+
+// Set once, standing at the actual kiosk — captures the admin's own
+// browser location as "where the workplace is", not the employee's.
+// Every punch at the kiosk gets checked against this (see src/app/
+// page.tsx); leaving it unset skips that check entirely.
+function LocationPolicyForm() {
+  const { uid, displayName } = usePermissions();
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
+  const [radiusMeters, setRadiusMeters] = useState(DEFAULT_RADIUS_METERS);
+  const [savedInfo, setSavedInfo] = useState<{ updatedByName: string; updatedAt: string } | null>(
+    null
+  );
+  const [loading, setLoading] = useState(true);
+  const [capturing, setCapturing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchLocationPolicy()
+      .then((policy) => {
+        if (cancelled || !policy) return;
+        setLatitude(policy.latitude);
+        setLongitude(policy.longitude);
+        setRadiusMeters(policy.radiusMeters);
+        setSavedInfo({ updatedByName: policy.updatedByName, updatedAt: policy.updatedAt });
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load settings");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleCaptureLocation() {
+    setCapturing(true);
+    setError(null);
+    try {
+      const position = await requestPosition();
+      setLatitude(position.coords.latitude);
+      setLongitude(position.coords.longitude);
+      setSaved(false);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? `Couldn't get this device's location: ${err.message}`
+          : "Couldn't get this device's location."
+      );
+    } finally {
+      setCapturing(false);
+    }
+  }
+
+  async function handleSave() {
+    if (latitude === null || longitude === null) return;
+    setSaving(true);
+    setSaved(false);
+    setError(null);
+    try {
+      const policy = {
+        latitude,
+        longitude,
+        radiusMeters,
+        updatedAt: new Date().toISOString(),
+        updatedBy: uid,
+        updatedByName: displayName,
+      };
+      await saveLocationPolicy(policy);
+      setSavedInfo({ updatedByName: policy.updatedByName, updatedAt: policy.updatedAt });
+      setSaved(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save settings");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-4 rounded-xl bg-neutral-900 p-4">
+      <div>
+        <h2 className="flex items-center gap-1.5 font-medium">
+          <MapPin className="h-4 w-4 text-neutral-400" /> Workplace location
+        </h2>
+        <p className="mt-1 text-xs text-neutral-400">
+          Punches from outside this radius get flagged and need a
+          supervisor to approve them, same as a late or unscheduled
+          punch-in. Capture this from the device standing at the actual
+          kiosk — not from wherever you happen to be right now.
+        </p>
+      </div>
+      {error && <p className="text-sm text-red-400">{error}</p>}
+
+      {loading ? (
+        <div className="flex justify-center py-6">
+          <Loader2 className="h-6 w-6 animate-spin text-neutral-400" />
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={handleCaptureLocation}
+              disabled={capturing}
+              className="flex items-center gap-2 rounded-lg bg-neutral-800 px-4 py-2.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {capturing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <MapPin className="h-4 w-4" />
+              )}
+              Use this device&apos;s current location
+            </button>
+            {latitude !== null && longitude !== null && (
+              <span className="font-mono text-xs text-neutral-400">
+                {latitude.toFixed(5)}, {longitude.toFixed(5)}
+              </span>
+            )}
+          </div>
+
+          <label className="flex max-w-xs flex-col gap-1 text-sm">
+            Acceptable radius (meters)
+            <input
+              type="number"
+              min={10}
+              step={10}
+              className="rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-600"
+              value={radiusMeters}
+              onChange={(e) => {
+                setRadiusMeters(Math.max(10, Number(e.target.value) || 0));
+                setSaved(false);
+              }}
+            />
+          </label>
+
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || latitude === null || longitude === null}
+            className="flex items-center justify-center gap-2 self-start rounded-lg bg-blue-600 px-4 py-3 font-medium text-white disabled:cursor-not-allowed disabled:bg-neutral-700"
+          >
+            {saving ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <Save className="h-5 w-5" />
+            )}
+            Save
+          </button>
+          {saved && (
+            <p className="flex items-center gap-1 text-sm text-emerald-400">
+              <CheckCircle2 className="h-4 w-4" /> Saved — the kiosk will
+              check every punch against this from now on.
+            </p>
+          )}
+          {savedInfo && !saved && (
+            <p className="text-xs text-neutral-500">
+              Last set by {savedInfo.updatedByName} on{" "}
+              {new Date(savedInfo.updatedAt).toLocaleString()}.
+            </p>
+          )}
+          {latitude === null && !savedInfo && (
+            <p className="rounded-lg bg-blue-950/40 px-3 py-2 text-xs text-blue-200">
+              Not set yet — punches aren&apos;t checked against a location
+              until this is configured.
             </p>
           )}
         </>

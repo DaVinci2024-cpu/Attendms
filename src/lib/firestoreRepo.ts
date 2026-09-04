@@ -25,6 +25,7 @@ import type {
   ScheduleColumnTemplate,
   KioskDisplaySettings,
   AuthPolicy,
+  LocationPolicy,
   PermissionGrant,
   Announcement,
   AvailabilityEntry,
@@ -64,6 +65,10 @@ function kioskDisplayDoc() {
 
 function authPolicyDoc() {
   return doc(getDb(), "companies", COMPANY_ID, "settings", "authPolicy");
+}
+
+function locationPolicyDoc() {
+  return doc(getDb(), "companies", COMPANY_ID, "settings", "locationPolicy");
 }
 
 function permissionsCol(): CollectionReference {
@@ -293,6 +298,15 @@ export async function saveKioskDisplaySettings(
 export async function fetchAuthPolicy(): Promise<AuthPolicy | null> {
   const snapshot = await getDoc(authPolicyDoc());
   return snapshot.exists() ? (snapshot.data() as AuthPolicy) : null;
+}
+
+export async function fetchLocationPolicy(): Promise<LocationPolicy | null> {
+  const snapshot = await getDoc(locationPolicyDoc());
+  return snapshot.exists() ? (snapshot.data() as LocationPolicy) : null;
+}
+
+export async function saveLocationPolicy(policy: LocationPolicy): Promise<void> {
+  await setDoc(locationPolicyDoc(), policy);
 }
 
 export async function saveAuthPolicy(policy: AuthPolicy): Promise<void> {

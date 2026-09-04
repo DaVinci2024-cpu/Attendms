@@ -8,8 +8,11 @@ import {
   History,
   LogOut,
   Loader2,
+  MapPin,
+  MapPinOff,
   Pencil,
   ShieldCheck,
+  Smartphone,
   Users,
   X,
 } from "lucide-react";
@@ -366,6 +369,35 @@ function TimeCell({
           className="flex items-center gap-0.5 text-xs text-blue-400"
         >
           <ShieldCheck className="h-3 w-3" />
+        </span>
+      )}
+      {log.location && (
+        <span
+          title={
+            log.location.withinRadius === false
+              ? `Off-site — about ${log.location.distanceMeters}m from the workplace (${log.location.latitude.toFixed(5)}, ${log.location.longitude.toFixed(5)})`
+              : log.location.withinRadius === true
+                ? `On-site (${log.location.latitude.toFixed(5)}, ${log.location.longitude.toFixed(5)})`
+                : `Location captured, but no workplace location is configured yet (${log.location.latitude.toFixed(5)}, ${log.location.longitude.toFixed(5)})`
+          }
+          className={`flex items-center gap-0.5 text-xs ${
+            log.location.withinRadius === false ? "text-red-400" : "text-neutral-500"
+          }`}
+        >
+          <MapPin className="h-3 w-3" />
+        </span>
+      )}
+      {!log.location && (
+        <span title="No location captured for this punch" className="text-neutral-600">
+          <MapPinOff className="h-3 w-3" />
+        </span>
+      )}
+      {log.device && (
+        <span
+          title={`${log.device.summary} · device ${log.device.deviceId.slice(0, 8)}`}
+          className="flex items-center gap-0.5 text-xs text-neutral-500"
+        >
+          <Smartphone className="h-3 w-3" />
         </span>
       )}
       {canEdit && (
