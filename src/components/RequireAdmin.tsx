@@ -12,17 +12,26 @@ import { getAuthClient } from "@/lib/auth";
 import {
   ensureAdminBootstrap,
   fetchCompany,
+  fetchEmployeeByAuthUid,
   fetchEmployeeByPortalUsername,
   fetchPermissionGrant,
 } from "@/lib/firestoreRepo";
 import { grantHas } from "@/lib/permissions";
 import { portalEmail } from "@/lib/constants";
-import { AdminNav } from "@/components/AdminNav";
+import { Sidebar } from "@/components/Sidebar";
 import type { Permission, PermissionGrant } from "@/lib/types";
 
 interface PermissionsContextValue {
   uid: string;
   email: string | null;
+  // A human name wherever one exists — the linked employee's fullName for
+  // a portal/grant account, since their Firebase email is a synthetic
+  // emp_xxx@attendms.local address that means nothing to a person reading
+  // an audit trail. Falls back to the email's local part for a real admin
+  // account (no Employee record to look up), and to the uid only if
+  // there's truly nothing else. Never null — every caller that stamps
+  // "who did this" onto a record wants a string, not an optional one.
+  displayName: string;
   isAdmin: boolean;
   grant: PermissionGrant | null;
   has: (permission: Permission) => boolean;
@@ -39,10 +48,37 @@ export function usePermissions(): PermissionsContextValue {
   return ctx;
 }
 
+async function resolveDisplayName(user: User): Promise<string> {
+  try {
+    const employee = await fetchEmployeeByAuthUid(user.uid);
+    if (employee) return employee.fullName;
+  } catch {
+    // Falls through to the email-based name below — not worth failing
+    // the whole access check over a display-name lookup.
+  }
+  if (user.email) return user.email.split("@")[0];
+  return user.uid;
+}
+
+// Resolved access state for the signed-in Firebase user — a single value
+// rather than separate isAdmin/grant booleans that update independently,
+// specifically so nothing can ever render "access denied" for someone
+// who's actually authorized just because the admin check finished a beat
+// before the grant check did (that race was the exact cause of the old
+// per-navigation "denied" flash for granted, non-full-admin users).
+type Access =
+  | { status: "checking" }
+  | { status: "denied" }
+  | {
+      status: "authorized";
+      isAdmin: boolean;
+      grant: PermissionGrant | null;
+      displayName: string;
+    };
+
 export function RequireAdmin({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null | undefined>(undefined);
-  const [isAdmin, setIsAdmin] = useState<boolean | undefined>(undefined);
-  const [grant, setGrant] = useState<PermissionGrant | null>(null);
+  const [access, setAccess] = useState<Access>({ status: "checking" });
   const [emailOrUsername, setEmailOrUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -51,14 +87,15 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     return onAuthStateChanged(getAuthClient(), (u) => {
       setUser(u);
-      setIsAdmin(undefined);
-      setGrant(null);
+      setAccess({ status: "checking" });
     });
   }, []);
 
   // "Signed in" no longer implies any particular access level — could be a
   // full admin, an employee portal account with no elevated access, or a
-  // supervisor with a specific permission grant. This resolves which.
+  // supervisor with a specific permission grant. This resolves which, and
+  // only reports a final status once every read it depends on has
+  // actually finished (see the Access type above).
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
@@ -72,17 +109,25 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
           // Bootstrapping: nobody has claimed admin yet — see
           // firestore.rules for why this is only reachable pre-bootstrap.
           await ensureAdminBootstrap(user.uid);
-          if (!cancelled) setIsAdmin(true);
+          const displayName = await resolveDisplayName(user);
+          if (!cancelled) {
+            setAccess({ status: "authorized", isAdmin: true, grant: null, displayName });
+          }
           return;
         }
         const admin = adminUids.includes(user.uid);
-        if (!cancelled) setIsAdmin(admin);
-        if (!admin) {
-          const g = await fetchPermissionGrant(user.uid);
-          if (!cancelled) setGrant(g);
+        const grant = admin ? null : await fetchPermissionGrant(user.uid);
+        if (cancelled) return;
+        if (!admin && !grant) {
+          setAccess({ status: "denied" });
+          return;
+        }
+        const displayName = await resolveDisplayName(user);
+        if (!cancelled) {
+          setAccess({ status: "authorized", isAdmin: admin, grant, displayName });
         }
       } catch {
-        if (!cancelled) setIsAdmin(false);
+        if (!cancelled) setAccess({ status: "denied" });
       }
     }
 
@@ -121,7 +166,7 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
     }
   }
 
-  if (user === undefined || (user && isAdmin === undefined)) {
+  if (user === undefined || (user && access.status === "checking")) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-neutral-400" />
@@ -179,9 +224,7 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const hasAnyAccess = isAdmin || grant !== null;
-
-  if (!hasAnyAccess) {
+  if (access.status !== "authorized") {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-4 text-center">
         <ShieldAlert className="h-8 w-8 text-red-400" />
@@ -201,21 +244,23 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
     );
   }
 
+  const { isAdmin, grant, displayName } = access;
   const contextValue: PermissionsContextValue = {
     uid: user.uid,
     email: user.email,
-    isAdmin: Boolean(isAdmin),
+    displayName,
+    isAdmin,
     grant,
-    has: (permission) => Boolean(isAdmin) || grantHas(grant, permission),
+    has: (permission) => isAdmin || grantHas(grant, permission),
   };
 
   return (
     <PermissionsContext.Provider value={contextValue}>
-      <div>
-        <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-3 px-4 pt-4 print:hidden">
-          <AdminNav />
-          <div className="flex items-center gap-2 text-sm text-neutral-400">
-            {user.email}
+      <div className="flex min-h-screen flex-col md:flex-row">
+        <Sidebar />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex items-center justify-end gap-2 px-4 py-3 text-sm text-neutral-400 print:hidden">
+            {displayName}
             <button
               type="button"
               onClick={() => signOut(getAuthClient())}
@@ -224,8 +269,8 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
               <LogOut className="h-4 w-4" /> Sign out
             </button>
           </div>
+          {children}
         </div>
-        {children}
       </div>
     </PermissionsContext.Provider>
   );

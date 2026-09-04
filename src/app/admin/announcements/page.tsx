@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Loader2, Megaphone, Send, Trash2 } from "lucide-react";
-import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
+import { usePermissions } from "@/components/RequireAdmin";
 import { PageHeader } from "@/components/PageHeader";
 import {
   deleteAnnouncement,
@@ -12,17 +12,13 @@ import {
 import type { Announcement } from "@/lib/types";
 
 export default function AdminAnnouncementsPage() {
-  return (
-    <RequireAdmin>
-      <AnnouncementsManager />
-    </RequireAdmin>
-  );
+  return <AnnouncementsManager />;
 }
 
 function AnnouncementsManager() {
-  const { has, uid, email } = usePermissions();
+  const { has, uid, displayName } = usePermissions();
   const canPost = has("manage_announcements");
-  const posterName = email ?? uid;
+  const posterName = displayName;
 
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [message, setMessage] = useState("");

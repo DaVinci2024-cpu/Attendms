@@ -17,7 +17,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
+import { usePermissions } from "@/components/RequireAdmin";
 import { SchedulePrintView } from "@/components/SchedulePrintView";
 import { PageHeader } from "@/components/PageHeader";
 import {
@@ -75,17 +75,13 @@ function omitKey<T>(obj: Record<string, T>, key: string): Record<string, T> {
 }
 
 export default function AdminSchedulePage() {
-  return (
-    <RequireAdmin>
-      <ScheduleGrid />
-    </RequireAdmin>
-  );
+  return <ScheduleGrid />;
 }
 
 function ScheduleGrid() {
-  const { has, uid, email } = usePermissions();
+  const { has, uid, displayName } = usePermissions();
   const canEdit = has("manage_schedule");
-  const editorName = email ?? uid;
+  const editorName = displayName;
 
   const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
   const [schedule, setSchedule] = useState<WeekSchedule | null>(null);

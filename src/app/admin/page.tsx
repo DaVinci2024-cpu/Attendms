@@ -10,15 +10,11 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
-import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
+import { usePermissions } from "@/components/RequireAdmin";
 import { PageHeader } from "@/components/PageHeader";
 
 export default function AdminHomePage() {
-  return (
-    <RequireAdmin>
-      <AdminHub />
-    </RequireAdmin>
-  );
+  return <AdminHub />;
 }
 
 const TILE_ICON_CLASSES = {

@@ -13,7 +13,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
+import { usePermissions } from "@/components/RequireAdmin";
 import { PageHeader } from "@/components/PageHeader";
 import { StatPill } from "@/components/StatPill";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -28,11 +28,7 @@ import { punchStatus } from "@/lib/attendanceStatus";
 import type { AttendanceLog, Employee } from "@/lib/types";
 
 export default function AdminDashboardPage() {
-  return (
-    <RequireAdmin>
-      <Dashboard />
-    </RequireAdmin>
-  );
+  return <Dashboard />;
 }
 
 function localDate(iso: string): string {
@@ -52,7 +48,7 @@ function toDatetimeLocalValue(iso: string): string {
 }
 
 function Dashboard() {
-  const { has, uid, email } = usePermissions();
+  const { has, uid, displayName } = usePermissions();
   const canEdit = has("edit_attendance");
 
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -319,7 +315,7 @@ function Dashboard() {
         <EditAttendanceModal
           log={editingLog}
           editorUid={uid}
-          editorName={email ?? uid}
+          editorName={displayName}
           onClose={() => setEditingLog(null)}
           onSaved={handleLogUpdated}
         />
@@ -330,7 +326,7 @@ function Dashboard() {
           employeeId={closingShiftFor.employeeId}
           employeeName={closingShiftFor.employeeName}
           editorUid={uid}
-          editorName={email ?? uid}
+          editorName={displayName}
           onClose={() => setClosingShiftFor(null)}
           onSaved={handleShiftClosed}
         />

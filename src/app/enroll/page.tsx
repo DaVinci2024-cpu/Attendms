@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Camera, CheckCircle2, Loader2 } from "lucide-react";
 import { CameraView } from "@/components/CameraView";
-import { RequireAdmin } from "@/components/RequireAdmin";
+import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
 import { PageHeader } from "@/components/PageHeader";
 import { useCamera } from "@/hooks/useCamera";
 import { useFaceModels } from "@/hooks/useFaceModels";
@@ -15,7 +15,7 @@ import {
   fetchAuthPolicy,
 } from "@/lib/firestoreRepo";
 import { findByPin, hashPin, PIN_PATTERN } from "@/lib/pin";
-import { CONSENT_POLICY_VERSION, ADMIN_EMAIL } from "@/lib/constants";
+import { CONSENT_POLICY_VERSION } from "@/lib/constants";
 import type { Employee } from "@/lib/types";
 
 const MAX_SNAPSHOTS = 3;
@@ -29,6 +29,12 @@ export default function EnrollPage() {
 }
 
 function EnrollForm() {
+  // Whoever is actually signed in right now — resolved automatically
+  // instead of a free-text field an admin has to remember to retype, so
+  // the consent record always names who really did the enrolling instead
+  // of silently keeping whatever the field last defaulted to.
+  const { displayName: recordedBy } = usePermissions();
+
   // Face capture is optional — a company that isn't using facial
   // recognition (PIN-only kiosk) shouldn't be forced through a camera
   // permission prompt for every hire. Starts off so no camera/model
@@ -46,7 +52,6 @@ function EnrollForm() {
   const [pinCode, setPinCode] = useState("");
   const [role, setRole] = useState<Employee["role"]>("employee");
   const [consentChecked, setConsentChecked] = useState(false);
-  const [recordedBy, setRecordedBy] = useState(ADMIN_EMAIL);
 
   const [descriptors, setDescriptors] = useState<number[][]>([]);
   const [captureStatus, setCaptureStatus] = useState<string | null>(null);
@@ -283,14 +288,10 @@ function EnrollForm() {
           </div>
         )}
 
-        <label className="flex flex-col gap-1 text-sm">
-          Recorded by (admin email)
-          <input
-            className="rounded-lg bg-neutral-800 px-3 py-2 text-base outline-none focus:ring-2 focus:ring-blue-600"
-            value={recordedBy}
-            onChange={(e) => setRecordedBy(e.target.value)}
-          />
-        </label>
+        <p className="text-xs text-neutral-500">
+          Recorded by <span className="text-neutral-300">{recordedBy}</span> —
+          whoever&apos;s actually signed in, automatically.
+        </p>
 
         <button
           type="button"

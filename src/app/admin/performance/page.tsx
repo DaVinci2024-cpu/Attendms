@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AlertTriangle, Loader2, Trophy } from "lucide-react";
-import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
+import { usePermissions } from "@/components/RequireAdmin";
 import { PageHeader } from "@/components/PageHeader";
 import { fetchAllAttendance, fetchAllEmployees, fetchWeekSchedule } from "@/lib/firestoreRepo";
 import { averageScore, computeEmployeePerformance, type EmployeePerformance } from "@/lib/performance";
@@ -16,11 +16,7 @@ const PERIOD_OPTIONS = [
 ];
 
 export default function AdminPerformancePage() {
-  return (
-    <RequireAdmin>
-      <PerformancePage />
-    </RequireAdmin>
-  );
+  return <PerformancePage />;
 }
 
 function PerformancePage() {

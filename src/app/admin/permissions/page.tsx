@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, Clock, Loader2, ShieldCheck, Trash2, Unlock } from "lucide-react";
-import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
+import { usePermissions } from "@/components/RequireAdmin";
 import { PageHeader } from "@/components/PageHeader";
 import {
   fetchAllEmployees,
@@ -26,11 +26,7 @@ import {
 import type { Employee, Permission, PermissionGrant, ScheduleExemption } from "@/lib/types";
 
 export default function AdminPermissionsPage() {
-  return (
-    <RequireAdmin>
-      <PermissionsManager />
-    </RequireAdmin>
-  );
+  return <PermissionsManager />;
 }
 
 function PermissionsManager() {

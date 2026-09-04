@@ -10,7 +10,6 @@ import {
   ScanFace,
   Save,
 } from "lucide-react";
-import { RequireAdmin } from "@/components/RequireAdmin";
 import {
   fetchAllEmployees,
   fetchAuthPolicy,
@@ -23,17 +22,15 @@ import { PageHeader } from "@/components/PageHeader";
 
 export default function KioskSettingsPage() {
   return (
-    <RequireAdmin>
-      <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
-        <PageHeader
-          title="Kiosk display"
-          subtitle="What employees see on the kiosk screen, and how they identify themselves before they punch in or out."
-          accent="cyan"
-        />
-        <DisplaySettingsForm />
-        <IdentificationMethodsForm />
-      </div>
-    </RequireAdmin>
+    <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
+      <PageHeader
+        title="Kiosk display"
+        subtitle="What employees see on the kiosk screen, and how they identify themselves before they punch in or out."
+        accent="cyan"
+      />
+      <DisplaySettingsForm />
+      <IdentificationMethodsForm />
+    </div>
   );
 }
 

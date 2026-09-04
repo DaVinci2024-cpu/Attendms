@@ -15,7 +15,6 @@ import {
   Trash2,
   UserRound,
 } from "lucide-react";
-import { RequireAdmin } from "@/components/RequireAdmin";
 import { PageHeader } from "@/components/PageHeader";
 import { StatPill } from "@/components/StatPill";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -53,11 +52,7 @@ function generateTempPassword(): string {
 }
 
 export default function AdminEmployeesPage() {
-  return (
-    <RequireAdmin>
-      <EmployeeList />
-    </RequireAdmin>
-  );
+  return <EmployeeList />;
 }
 
 function EmployeeList() {
