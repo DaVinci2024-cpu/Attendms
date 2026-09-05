@@ -717,7 +717,14 @@ export default function Home() {
     }
 
     // Punch out.
-    if (lastLog && isEarlyPunchOut(lastLog.scheduledShiftEnd, now)) {
+    if (!lastLog || lastLog.type !== "punch_in") {
+      setBlockedReason(`${employee.fullName} isn't currently punched in.`);
+      setOverridable(false);
+      setStatus("blocked");
+      return;
+    }
+
+    if (isEarlyPunchOut(lastLog.scheduledShiftEnd, now)) {
       const supervisor: ShiftSupervisor | null = lastLog.scheduledSupervisorEmployeeId
         ? {
             employeeId: lastLog.scheduledSupervisorEmployeeId,

@@ -260,11 +260,11 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex items-center justify-end gap-2 px-4 py-3 text-sm text-neutral-400 print:hidden">
-            {displayName}
+            <span className="truncate">{displayName}</span>
             <button
               type="button"
               onClick={() => signOut(getAuthClient())}
-              className="flex items-center gap-1 hover:text-neutral-200"
+              className="flex shrink-0 items-center gap-1 hover:text-neutral-200"
             >
               <LogOut className="h-4 w-4" /> Sign out
             </button>

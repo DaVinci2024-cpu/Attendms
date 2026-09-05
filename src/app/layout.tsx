@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { RegisterServiceWorker } from "@/components/RegisterServiceWorker";
 import "./globals.css";
@@ -18,6 +18,15 @@ export const metadata: Metadata = {
   description:
     "Offline-capable face + PIN attendance kiosk prototype (single-tenant demo).",
   manifest: "/manifest.json",
+};
+
+// Without this, mobile browsers render the page at a fixed desktop-width
+// viewport and scale it down to fit — every page looks "zoomed out" and
+// needs a pinch-zoom to use normally, instead of laying out natively at
+// the phone's real width.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({
