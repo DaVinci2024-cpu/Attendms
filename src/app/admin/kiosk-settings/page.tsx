@@ -384,6 +384,7 @@ const DEFAULT_RADIUS_METERS = 150;
 // page.tsx); leaving it unset skips that check entirely.
 function LocationPolicyForm() {
   const { uid, displayName } = usePermissions();
+  const [enabled, setEnabled] = useState(false);
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
   const [radiusMeters, setRadiusMeters] = useState(DEFAULT_RADIUS_METERS);
@@ -401,6 +402,7 @@ function LocationPolicyForm() {
     fetchLocationPolicy()
       .then((policy) => {
         if (cancelled || !policy) return;
+        setEnabled(policy.enabled === true);
         setLatitude(policy.latitude);
         setLongitude(policy.longitude);
         setRadiusMeters(policy.radiusMeters);
@@ -448,6 +450,7 @@ function LocationPolicyForm() {
         latitude,
         longitude,
         radiusMeters,
+        enabled,
         updatedAt: new Date().toISOString(),
         updatedBy: uid,
         updatedByName: displayName,
@@ -469,7 +472,7 @@ function LocationPolicyForm() {
           <MapPin className="h-4 w-4 text-neutral-400" /> Workplace location
         </h2>
         <p className="mt-1 text-xs text-neutral-400">
-          Punches from outside this radius get flagged and need a
+          When on, punches from outside this radius get flagged and need a
           supervisor to approve them, same as a late or unscheduled
           punch-in. Capture this from the device standing at the actual
           kiosk — not from wherever you happen to be right now.
@@ -483,6 +486,17 @@ function LocationPolicyForm() {
         </div>
       ) : (
         <>
+          <ToggleRow
+            icon={MapPin}
+            label="Enforce this location"
+            description="Off by default — turn on once you've confirmed this kiosk's browser location is accurate. With multiple kiosks at different sites, keep this off for any of them the location check misreads (phone/laptop Wi-Fi-based location can be off by hundreds of meters)."
+            checked={enabled}
+            onChange={(v) => {
+              setEnabled(v);
+              setSaved(false);
+            }}
+          />
+
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
@@ -534,8 +548,10 @@ function LocationPolicyForm() {
           </button>
           {saved && (
             <p className="flex items-center gap-1 text-sm text-emerald-400">
-              <CheckCircle2 className="h-4 w-4" /> Saved — the kiosk will
-              check every punch against this from now on.
+              <CheckCircle2 className="h-4 w-4" />{" "}
+              {enabled
+                ? "Saved — the kiosk will check every punch against this from now on."
+                : "Saved — location is off, so punches aren't checked against it."}
             </p>
           )}
           {savedInfo && !saved && (
@@ -547,7 +563,7 @@ function LocationPolicyForm() {
           {latitude === null && !savedInfo && (
             <p className="rounded-lg bg-blue-950/40 px-3 py-2 text-xs text-blue-200">
               Not set yet — punches aren&apos;t checked against a location
-              until this is configured.
+              until this is configured and turned on.
             </p>
           )}
         </>

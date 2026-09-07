@@ -138,12 +138,19 @@ export default function Home() {
   const [scheduleExemptions, setScheduleExemptions] = useState<
     Record<string, ScheduleExemption>
   >({});
-  const [locationPolicy, setLocationPolicy] = useState<LocationPolicy | null>(null);
-  // Whether this kiosk device has granted the browser location prompt at
-  // all — gates the entire punch UI (see the early return near the
-  // bottom of this component). "checking" is also the state on every
-  // reload even after a prior grant; browsers answer that near-instantly
-  // from their own stored permission, so it's not a real wait in practice.
+  // undefined = not fetched yet (see the loading gate near the bottom of
+  // this component); null = fetched, no policy configured — either way
+  // treated as "location isn't enforced" everywhere else in this file.
+  const [locationPolicy, setLocationPolicy] = useState<LocationPolicy | null | undefined>(
+    undefined
+  );
+  // Whether this kiosk device has granted the browser location prompt —
+  // only meaningful (and only gates the punch UI) when the admin has
+  // actually turned location enforcement on for this company; see the
+  // early return near the bottom of this component. "checking" is also
+  // the state on every reload even after a prior grant; browsers answer
+  // that near-instantly from their own stored permission, so it's not a
+  // real wait in practice.
   const [locationConsent, setLocationConsent] = useState<"checking" | "granted" | "denied">(
     "checking"
   );
@@ -307,8 +314,13 @@ export default function Home() {
         if (cancelled) return;
         setLocationPolicy(policy);
       } catch (err) {
-        if (cancelled || !navigator.onLine) return;
-        console.error("Failed to load location policy:", err);
+        if (cancelled) return;
+        if (navigator.onLine) console.error("Failed to load location policy:", err);
+        // Couldn't determine the policy at all (e.g. genuinely offline on
+        // a first-ever load, nothing cached yet) — default to "no
+        // enforcement" rather than leaving the kiosk stuck on the loading
+        // gate below indefinitely.
+        setLocationPolicy(null);
       }
     }
 
@@ -339,7 +351,16 @@ export default function Home() {
   // await on every retry).
   const [locationRetryToken, setLocationRetryToken] = useState(0);
 
+  // Only request the browser's location permission at all when an admin
+  // has actually turned location enforcement on (see kiosk-settings) —
+  // primitives, not the policy object itself, so a refetch that leaves
+  // the enabled flag unchanged (refreshData runs on every punch attempt)
+  // doesn't re-trigger this and re-prompt mid-flow.
+  const locationPolicyLoaded = locationPolicy !== undefined;
+  const locationEnforcementEnabled = locationPolicy?.enabled === true;
+
   useEffect(() => {
+    if (!locationPolicyLoaded || !locationEnforcementEnabled) return;
     let cancelled = false;
     async function checkLocation() {
       try {
@@ -359,7 +380,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [locationRetryToken]);
+  }, [locationPolicyLoaded, locationEnforcementEnabled, locationRetryToken]);
 
   // The kiosk is a fixed device, so this only needs to notice it's been
   // physically moved — not track continuous movement. A transient
@@ -625,23 +646,28 @@ export default function Home() {
 
     // Checked before anything employee-specific — this is about whether
     // the kiosk itself is where it's supposed to be, which applies the
-    // same way to every punch through it, in or out.
-    const punchLocation = computePunchLocation();
-    if (!punchLocation) {
-      setBlockedReason("Confirming this kiosk's location — try again in a moment.");
-      setOverridable(false);
-      setStatus("blocked");
-      return;
-    }
-    if (punchLocation.withinRadius === false) {
-      setPendingShift(null);
-      setRequiredSupervisor(findCurrentSupervisor(schedule, mondayOf(now), now));
-      setOverridable(true);
-      setBlockedReason(
-        `This kiosk isn't at the workplace (about ${punchLocation.distanceMeters}m away).`
-      );
-      setStatus("blocked");
-      return;
+    // same way to every punch through it, in or out. Only when an admin
+    // has actually turned location enforcement on (see kiosk-settings);
+    // a coordinate + radius on file with enforcement off just means it
+    // isn't being checked yet.
+    if (locationPolicy?.enabled) {
+      const punchLocation = computePunchLocation();
+      if (!punchLocation) {
+        setBlockedReason("Confirming this kiosk's location — try again in a moment.");
+        setOverridable(false);
+        setStatus("blocked");
+        return;
+      }
+      if (punchLocation.withinRadius === false) {
+        setPendingShift(null);
+        setRequiredSupervisor(findCurrentSupervisor(schedule, mondayOf(now), now));
+        setOverridable(true);
+        setBlockedReason(
+          `This kiosk isn't at the workplace (about ${punchLocation.distanceMeters}m away).`
+        );
+        setStatus("blocked");
+        return;
+      }
     }
 
     let lastLog: AttendanceLog | null = null;
@@ -856,12 +882,14 @@ export default function Home() {
     }, 2500);
   }
 
-  // Nothing below this point is reachable without the kiosk's own
-  // location consent — every punch gets checked against it (see
-  // evaluateAndFinalize), so there's no useful "PIN-only fallback" here
-  // the way there is for facial recognition; without a location, the
-  // check itself can't run at all.
-  if (locationConsent === "checking") {
+  // Nothing below this point is reachable until we know whether this
+  // company even wants location enforcement — a brief, one-time check on
+  // every load. Kiosks with it off (the default, and every legacy policy
+  // saved before this toggle existed) skip straight past this and never
+  // prompt for location permission at all; only when it's explicitly on
+  // does the kiosk's own location consent gate the punch UI (see
+  // evaluateAndFinalize).
+  if (locationPolicy === undefined) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-black">
         <Loader2 className="h-8 w-8 animate-spin text-neutral-600" />
@@ -869,7 +897,15 @@ export default function Home() {
     );
   }
 
-  if (locationConsent === "denied") {
+  if (locationPolicy?.enabled && locationConsent === "checking") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-black">
+        <Loader2 className="h-8 w-8 animate-spin text-neutral-600" />
+      </div>
+    );
+  }
+
+  if (locationPolicy?.enabled && locationConsent === "denied") {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-black px-4 text-center text-white">
         <MapPinOff className="h-12 w-12 text-neutral-600" />

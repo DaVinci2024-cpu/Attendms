@@ -266,6 +266,12 @@ export interface LocationPolicy {
   latitude: number;
   longitude: number;
   radiusMeters: number;
+  // Whether the kiosk actually checks punches against this location at
+  // all. Optional/absent (e.g. a policy saved before this field existed)
+  // means off — a coordinate + radius on file doesn't imply enforcement
+  // is wanted, especially with multiple physical kiosks where browser
+  // geolocation accuracy can vary a lot between devices.
+  enabled?: boolean;
   updatedAt: string;
   updatedBy: string;
   updatedByName: string;
