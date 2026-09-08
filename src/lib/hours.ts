@@ -1,3 +1,4 @@
+import { localDate } from "./dateFormat";
 import type { AttendanceLog } from "./types";
 
 export interface WorkSession {
@@ -71,6 +72,44 @@ export function pairSessions(logs: AttendanceLog[]): WorkSession[] {
   return sessions.sort((a, b) =>
     b.punchIn.timestamp.localeCompare(a.punchIn.timestamp)
   );
+}
+
+export interface DayRow {
+  employeeId: string;
+  employeeName: string;
+  date: string;
+  sessions: WorkSession[];
+  totalMs: number;
+}
+
+// One row per employee per day (can hold more than one session a day for
+// someone covering more than one rotation) instead of one row per punch
+// pair — used by both the dashboard's today view and the full history
+// page so a table reads as "how was this person's day", not a flat punch
+// log. Still-open sessions count their elapsed time toward the day's
+// total as of `now`, not zero.
+export function groupSessionsByDay(sessions: WorkSession[], now: Date): DayRow[] {
+  const map = new Map<string, DayRow>();
+  for (const s of sessions) {
+    const date = localDate(s.punchIn.timestamp);
+    const key = `${s.employeeId}_${date}`;
+    const row = map.get(key) ?? {
+      employeeId: s.employeeId,
+      employeeName: s.employeeName,
+      date,
+      sessions: [],
+      totalMs: 0,
+    };
+    row.sessions.push(s);
+    row.totalMs += s.durationMs ?? now.getTime() - new Date(s.punchIn.timestamp).getTime();
+    map.set(key, row);
+  }
+  const rows = Array.from(map.values());
+  for (const row of rows) {
+    row.sessions.sort((a, b) => a.punchIn.timestamp.localeCompare(b.punchIn.timestamp));
+  }
+  rows.sort((a, b) => b.date.localeCompare(a.date) || a.employeeName.localeCompare(b.employeeName));
+  return rows;
 }
 
 // Averages a list of ISO timestamps' local time-of-day (ignoring the

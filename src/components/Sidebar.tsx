@@ -7,6 +7,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  History,
   Home,
   LayoutDashboard,
   Megaphone,
@@ -35,6 +36,12 @@ const LINKS: NavLink[] = [
     href: "/admin/dashboard",
     label: "Dashboard",
     icon: LayoutDashboard,
+    visible: (has) => has("view_reports") || has("edit_attendance"),
+  },
+  {
+    href: "/admin/history",
+    label: "History",
+    icon: History,
     visible: (has) => has("view_reports") || has("edit_attendance"),
   },
   {
