@@ -192,6 +192,7 @@ export interface DepartmentShiftSummary {
   end: Date;
   scheduledCount: number;
   presentCount: number;
+  scheduled: { employeeId: string; employeeName: string; present: boolean }[];
 }
 
 // Today's timed shifts, grouped by department — no separate "rotation
@@ -214,12 +215,17 @@ export function summarizeDayByDepartment(
     const start = timeOnDate(now, col.startTime);
     const end = timeOnDate(now, col.endTime);
     const isPresent = presentDuringWindow(logs, start, end);
-    const byDept = new Map<string, { scheduled: number; present: number }>();
+    const byDept = new Map<
+      string,
+      { scheduled: number; present: number; roster: DepartmentShiftSummary["scheduled"] }
+    >();
     for (const a of cellAssignments(row.cells, col.columnId)) {
       const dept = departmentByEmployeeId.get(a.employeeId) ?? "Unassigned";
-      const counts = byDept.get(dept) ?? { scheduled: 0, present: 0 };
+      const counts = byDept.get(dept) ?? { scheduled: 0, present: 0, roster: [] };
+      const present = isPresent(a.employeeId);
       counts.scheduled += 1;
-      if (isPresent(a.employeeId)) counts.present += 1;
+      if (present) counts.present += 1;
+      counts.roster.push({ employeeId: a.employeeId, employeeName: a.employeeName, present });
       byDept.set(dept, counts);
     }
     for (const [dept, counts] of byDept) {
@@ -230,6 +236,7 @@ export function summarizeDayByDepartment(
         end,
         scheduledCount: counts.scheduled,
         presentCount: counts.present,
+        scheduled: counts.roster,
       });
       result.set(dept, list);
     }

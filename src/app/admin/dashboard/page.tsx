@@ -31,6 +31,7 @@ import {
   presentDuringWindow,
   summarizeDayByDepartment,
   summarizeShiftAttendance,
+  type DepartmentShiftSummary,
 } from "@/lib/shiftStats";
 import type { AttendanceLog, Employee, WeekSchedule } from "@/lib/types";
 
@@ -61,6 +62,10 @@ function Dashboard() {
     "headcount" | "noshows" | "hours" | "ontime" | null
   >(null);
   const [summaryEmployeeId, setSummaryEmployeeId] = useState<string | null>(null);
+  const [openDeptShift, setOpenDeptShift] = useState<{
+    dept: string;
+    shift: DepartmentShiftSummary;
+  } | null>(null);
   const [voidingLog, setVoidingLog] = useState<AttendanceLog | null>(null);
   const [addingPunch, setAddingPunch] = useState(false);
 
@@ -348,12 +353,14 @@ function Dashboard() {
                     <p className="text-sm font-medium">{dept}</p>
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
                       {shifts.map((s) => (
-                        <span
+                        <button
                           key={s.columnLabel}
-                          className="rounded-full bg-neutral-900 px-2.5 py-1 text-xs text-neutral-300"
+                          type="button"
+                          onClick={() => setOpenDeptShift({ dept, shift: s })}
+                          className="rounded-full bg-neutral-900 px-2.5 py-1 text-xs text-neutral-300 hover:bg-neutral-700"
                         >
                           {s.columnLabel} {s.presentCount}/{s.scheduledCount}
-                        </span>
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -626,6 +633,39 @@ function Dashboard() {
               </p>
             </div>
           )}
+        </DetailSheet>
+      )}
+
+      {openDeptShift && (
+        <DetailSheet
+          title={`${openDeptShift.dept} · ${openDeptShift.shift.columnLabel}`}
+          onClose={() => setOpenDeptShift(null)}
+        >
+          <p className="text-sm text-neutral-400">
+            {localTime(openDeptShift.shift.start.toISOString())}–
+            {localTime(openDeptShift.shift.end.toISOString())} ·{" "}
+            {openDeptShift.shift.presentCount} of {openDeptShift.shift.scheduledCount} scheduled{" "}
+            {openDeptShift.shift.presentCount === 1 ? "is" : "are"} clocked in.
+          </p>
+          <ul className="flex flex-col gap-1 text-sm">
+            {openDeptShift.shift.scheduled.map((s) => (
+              <li key={s.employeeId} className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenDeptShift(null);
+                    setSummaryEmployeeId(s.employeeId);
+                  }}
+                  className="hover:underline"
+                >
+                  {s.employeeName}
+                </button>
+                <span className={s.present ? "text-emerald-400" : "text-neutral-500"}>
+                  {s.present ? "Clocked in" : "Not yet"}
+                </span>
+              </li>
+            ))}
+          </ul>
         </DetailSheet>
       )}
     </div>
