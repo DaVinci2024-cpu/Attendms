@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   CalendarClock,
   CheckCircle2,
@@ -18,6 +19,7 @@ import {
 import { PageHeader } from "@/components/PageHeader";
 import { StatPill } from "@/components/StatPill";
 import { StatusBadge } from "@/components/StatusBadge";
+import { DepartmentPicker } from "@/components/DepartmentPicker";
 import {
   deleteEmployee,
   fetchAllEmployees,
@@ -26,6 +28,7 @@ import {
   linkEmployeePortalAccount,
   resetEmployeePin,
   setEmployeeSupervisorFlag,
+  updateEmployeeDepartment,
   updateEmployeeName,
 } from "@/lib/firestoreRepo";
 import { createEmployeePortalAccount } from "@/lib/auth";
@@ -52,10 +55,19 @@ function generateTempPassword(): string {
 }
 
 export default function AdminEmployeesPage() {
-  return <EmployeeList />;
+  return (
+    <Suspense fallback={null}>
+      <EmployeeList />
+    </Suspense>
+  );
 }
 
 function EmployeeList() {
+  // ?employeeId=... deep-links here from elsewhere (e.g. the dashboard's
+  // "Full details" link) and auto-opens that one employee's history
+  // panel instead of the admin having to find them again in the list.
+  const targetEmployeeId = useSearchParams().get("employeeId");
+
   const [employees, setEmployees] = useState<Employee[] | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -103,9 +115,11 @@ function EmployeeList() {
     );
   }
 
-  function handleNameUpdated(employeeId: string, fullName: string) {
+  function handleDetailsUpdated(employeeId: string, fullName: string, department: string) {
     setEmployees((prev) =>
-      prev?.map((e) => (e.employeeId === employeeId ? { ...e, fullName } : e)) ?? null
+      prev?.map((e) =>
+        e.employeeId === employeeId ? { ...e, fullName, department: department || undefined } : e
+      ) ?? null
     );
   }
 
@@ -148,12 +162,15 @@ function EmployeeList() {
             key={employee.employeeId}
             employee={employee}
             deleting={deletingId === employee.employeeId}
+            openByDefault={employee.employeeId === targetEmployeeId}
             onDelete={() => handleDelete(employee.employeeId, employee.fullName)}
             onPortalLinked={(username) => handlePortalLinked(employee.employeeId, username)}
             onToggleSupervisor={(isSupervisor) =>
               handleToggleSupervisor(employee.employeeId, isSupervisor)
             }
-            onNameUpdated={(fullName) => handleNameUpdated(employee.employeeId, fullName)}
+            onDetailsUpdated={(fullName, department) =>
+              handleDetailsUpdated(employee.employeeId, fullName, department)
+            }
           />
         ))}
       </ul>
@@ -164,17 +181,19 @@ function EmployeeList() {
 function EmployeeRow({
   employee,
   deleting,
+  openByDefault,
   onDelete,
   onPortalLinked,
   onToggleSupervisor,
-  onNameUpdated,
+  onDetailsUpdated,
 }: {
   employee: Employee;
   deleting: boolean;
+  openByDefault: boolean;
   onDelete: () => void;
   onPortalLinked: (portalUsername: string) => void;
   onToggleSupervisor: (isSupervisor: boolean) => void;
-  onNameUpdated: (fullName: string) => void;
+  onDetailsUpdated: (fullName: string, department: string) => void;
 }) {
   const [settingUp, setSettingUp] = useState(false);
   const [username, setUsername] = useState(() => slugifyUsername(employee.fullName));
@@ -186,6 +205,7 @@ function EmployeeRow({
 
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(employee.fullName);
+  const [editDepartment, setEditDepartment] = useState(employee.department ?? "");
   const [savingName, setSavingName] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [nameSaved, setNameSaved] = useState(false);
@@ -195,9 +215,20 @@ function EmployeeRow({
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinReset, setPinReset] = useState<string | null>(null);
 
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(openByDefault);
+  const rowRef = useRef<HTMLLIElement>(null);
 
-  async function handleSaveName() {
+  useEffect(() => {
+    if (openByDefault) {
+      rowRef.current?.scrollIntoView({ block: "center" });
+    }
+    // Only meant to run once, for the row the caller deep-linked to —
+    // re-running on every `openByDefault` identity check would fight the
+    // admin's own scroll position.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleSaveDetails() {
     const trimmed = editName.trim();
     if (!trimmed) {
       setNameError("Name can't be empty.");
@@ -207,11 +238,14 @@ function EmployeeRow({
     setNameError(null);
     setNameSaved(false);
     try {
-      await updateEmployeeName(employee.employeeId, trimmed);
-      onNameUpdated(trimmed);
+      await Promise.all([
+        updateEmployeeName(employee.employeeId, trimmed),
+        updateEmployeeDepartment(employee.employeeId, editDepartment.trim()),
+      ]);
+      onDetailsUpdated(trimmed, editDepartment.trim());
       setNameSaved(true);
     } catch (err) {
-      setNameError(err instanceof Error ? err.message : "Failed to update name");
+      setNameError(err instanceof Error ? err.message : "Failed to update details");
     } finally {
       setSavingName(false);
     }
@@ -276,7 +310,12 @@ function EmployeeRow({
   }
 
   return (
-    <li className="rounded-lg bg-neutral-900 px-4 py-3">
+    <li
+      ref={rowRef}
+      className={`rounded-lg bg-neutral-900 px-4 py-3 ${
+        openByDefault ? "ring-2 ring-blue-600" : ""
+      }`}
+    >
       <div className="flex items-center justify-between">
         <div>
           <p className="flex items-center gap-1.5 font-medium">
@@ -288,6 +327,7 @@ function EmployeeRow({
             )}
           </p>
           <p className="text-xs text-neutral-400">
+            {employee.department && `${employee.department} · `}
             {employee.faceDescriptors.length} snapshot
             {employee.faceDescriptors.length === 1 ? "" : "s"} · {employee.role}
             {!employee.active && " · inactive"}
@@ -324,6 +364,7 @@ function EmployeeRow({
             onClick={() => {
               setEditing((prev) => !prev);
               setEditName(employee.fullName);
+              setEditDepartment(employee.department ?? "");
               setNameError(null);
               setNameSaved(false);
               setNewPin("");
@@ -366,14 +407,15 @@ function EmployeeRow({
                 }}
               />
             </label>
+            <DepartmentPicker value={editDepartment} onChange={setEditDepartment} />
             <button
               type="button"
-              onClick={handleSaveName}
+              onClick={handleSaveDetails}
               disabled={savingName}
               className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-neutral-700"
             >
               {savingName && <Loader2 className="h-4 w-4 animate-spin" />}
-              Save name
+              Save details
             </button>
             {nameSaved && (
               <span className="flex items-center gap-1 text-xs text-emerald-400">

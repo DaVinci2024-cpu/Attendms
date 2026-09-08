@@ -33,6 +33,17 @@ export const LATE_PUNCH_IN_GRACE_MS = 15 * 60 * 1000;
 // accepted without a supervisor override.
 export const EARLY_PUNCH_OUT_GRACE_MS = 60 * 60 * 1000;
 
+// Quick-pick suggestions for Employee.department — not an enum, just a
+// starting list so most employees get a consistent value without typing
+// one. An admin can still type anything else; "Other" in the picker UI
+// reveals a free-text box for that.
+export const DEPARTMENT_PRESETS = [
+  "Doctor",
+  "Nurse",
+  "Lab technician",
+  "Ground support",
+] as const;
+
 // Employees don't have real work emails, so the portal login uses a
 // synthetic, non-deliverable email under this fake domain — Firebase Auth
 // requires an email-shaped identifier even though nothing is ever sent to

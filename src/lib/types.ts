@@ -43,6 +43,13 @@ export interface Employee {
   // shows a badge wherever their name appears so it's obvious at a glance
   // who holds this role, not just when they happen to be assigned one.
   isSupervisor?: boolean;
+  // Job department/sector (e.g. "Doctor", "Nurse") — drives the
+  // dashboard's per-sector daily rotation summary. Free text so it can
+  // hold anything (a handful of known departments are offered as quick
+  // picks in the UI, not enforced at this layer), absent for anyone not
+  // yet categorized. Deliberately lighter than a real roles/permissions
+  // concept — see DEPARTMENT_PRESETS in src/lib/constants.ts.
+  department?: string;
 }
 
 export type PunchType = "punch_in" | "punch_out";
@@ -59,6 +66,12 @@ export interface AttendanceEdit {
   editedAt: string; // ISO
   previousTimestamp: string | null;
   previousType: PunchType | null;
+  // Marks this edit as voiding the record (a mistaken/duplicate punch)
+  // rather than correcting it — the log itself is never deleted (see the
+  // firestore.rules comment on /attendance), just excluded from live
+  // counts (currently-clocked-in, hours, no-shows) from this point on
+  // while staying visible in that employee's history for accountability.
+  voided?: boolean;
 }
 
 // Stamped on a punch that only went through because a shift supervisor

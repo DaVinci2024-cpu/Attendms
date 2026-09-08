@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
+  Ban,
   CheckCircle2,
   Clock3,
   History,
@@ -11,6 +13,7 @@ import {
   MapPin,
   MapPinOff,
   Pencil,
+  Plus,
   ShieldCheck,
   Smartphone,
   Users,
@@ -23,23 +26,37 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { DetailSheet } from "@/components/DetailSheet";
 import {
   closeShift,
+  createManualAttendanceLog,
   editAttendanceLog,
   fetchAllAttendance,
   fetchAllEmployees,
   fetchWeekSchedule,
+  voidAttendanceLog,
 } from "@/lib/firestoreRepo";
-import { pairSessions, formatDuration } from "@/lib/hours";
-import { punchStatus } from "@/lib/attendanceStatus";
-import { LATE_PUNCH_IN_GRACE_MS } from "@/lib/constants";
+import { pairSessions, formatDuration, type WorkSession } from "@/lib/hours";
+import { isVoided, punchStatus } from "@/lib/attendanceStatus";
+import { DEPARTMENT_PRESETS, LATE_PUNCH_IN_GRACE_MS } from "@/lib/constants";
 import { mondayOf, toWeekId } from "@/lib/week";
 import {
   activeShifts,
   mostRecentlyEndedShift,
   noShowsToday,
+  nextScheduledShift,
   presentDuringWindow,
+  summarizeDayByDepartment,
   summarizeShiftAttendance,
 } from "@/lib/shiftStats";
-import type { AttendanceLog, Employee, WeekSchedule } from "@/lib/types";
+import type { AttendanceLog, Employee, PunchType, WeekSchedule } from "@/lib/types";
+
+// Known departments sort first (in this order), then anything custom
+// alphabetically, "Unassigned" always last — for the sector rotation
+// summary below.
+function departmentSortKey(department: string): string {
+  const presetIndex = (DEPARTMENT_PRESETS as readonly string[]).indexOf(department);
+  if (department === "Unassigned") return "zzz";
+  if (presetIndex >= 0) return `0${presetIndex}`;
+  return `1${department}`;
+}
 
 // A background refresh cadence for the dashboard's "right now" pills —
 // frequent enough that they don't visibly go stale while the page is
@@ -83,6 +100,9 @@ function Dashboard() {
   const [openDetail, setOpenDetail] = useState<
     "headcount" | "noshows" | "hours" | "ontime" | null
   >(null);
+  const [summaryEmployeeId, setSummaryEmployeeId] = useState<string | null>(null);
+  const [voidingLog, setVoidingLog] = useState<AttendanceLog | null>(null);
+  const [addingPunch, setAddingPunch] = useState(false);
 
   const [employeeFilter, setEmployeeFilter] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -147,6 +167,7 @@ function Dashboard() {
   function handleLogUpdated(updated: AttendanceLog) {
     setLogs((prev) => prev.map((l) => (l.logId === updated.logId ? updated : l)));
     setEditingLog(null);
+    setVoidingLog(null);
   }
 
   function handleShiftClosed(newLog: AttendanceLog) {
@@ -154,7 +175,19 @@ function Dashboard() {
     setClosingShiftFor(null);
   }
 
-  const allSessions = useMemo(() => pairSessions(logs), [logs]);
+  function handlePunchAdded(newLog: AttendanceLog) {
+    setLogs((prev) => [...prev, newLog]);
+    setAddingPunch(false);
+  }
+
+  // Voided punches stay in `logs` for good (see firestore.rules — never
+  // actually deleted) but are excluded here, from everything "live":
+  // sessions, currently-clocked-in, the daily table, hours, no-shows, the
+  // sector summary. The employee summary popup below reads the full
+  // `logs` instead, specifically so a voided punch still shows up there.
+  const activeLogs = useMemo(() => logs.filter((l) => !isVoided(l)), [logs]);
+
+  const allSessions = useMemo(() => pairSessions(activeLogs), [activeLogs]);
 
   const currentlyIn = useMemo(
     () => allSessions.filter((s) => s.punchOut === null),
@@ -180,6 +213,42 @@ function Dashboard() {
     0
   );
 
+  // One row per employee per day (grouping filteredSessions, which can
+  // hold more than one session a day for someone covering more than one
+  // rotation) instead of one row per punch pair — the table reads as
+  // "how was this person's day", not a flat punch log.
+  interface DayRow {
+    employeeId: string;
+    employeeName: string;
+    date: string;
+    sessions: WorkSession[];
+    totalMs: number;
+  }
+  const dayRows = useMemo(() => {
+    const map = new Map<string, DayRow>();
+    for (const s of filteredSessions) {
+      const date = localDate(s.punchIn.timestamp);
+      const key = `${s.employeeId}_${date}`;
+      const row = map.get(key) ?? {
+        employeeId: s.employeeId,
+        employeeName: s.employeeName,
+        date,
+        sessions: [],
+        totalMs: 0,
+      };
+      row.sessions.push(s);
+      row.totalMs +=
+        s.durationMs ?? now.getTime() - new Date(s.punchIn.timestamp).getTime();
+      map.set(key, row);
+    }
+    const rows = Array.from(map.values());
+    for (const row of rows) {
+      row.sessions.sort((a, b) => a.punchIn.timestamp.localeCompare(b.punchIn.timestamp));
+    }
+    rows.sort((a, b) => b.date.localeCompare(a.date) || a.employeeName.localeCompare(b.employeeName));
+    return rows;
+  }, [filteredSessions, now]);
+
   const weekStart = useMemo(() => mondayOf(now), [now]);
 
   // The shift(s) actually running right now — drives the headcount,
@@ -202,13 +271,29 @@ function Dashboard() {
     if (!previousShiftWindow) return null;
     return summarizeShiftAttendance(
       [previousShiftWindow],
-      presentDuringWindow(logs, previousShiftWindow.start, previousShiftWindow.end)
+      presentDuringWindow(activeLogs, previousShiftWindow.start, previousShiftWindow.end)
     );
-  }, [previousShiftWindow, logs]);
+  }, [previousShiftWindow, activeLogs]);
 
   const todaysNoShows = useMemo(
-    () => noShowsToday(schedule, weekStart, now, logs, LATE_PUNCH_IN_GRACE_MS),
-    [schedule, weekStart, now, logs]
+    () => noShowsToday(schedule, weekStart, now, activeLogs, LATE_PUNCH_IN_GRACE_MS),
+    [schedule, weekStart, now, activeLogs]
+  );
+
+  const departmentByEmployeeId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of employees) {
+      map.set(e.employeeId, e.department?.trim() || "Unassigned");
+    }
+    return map;
+  }, [employees]);
+
+  const departmentSummary = useMemo(
+    () =>
+      Array.from(
+        summarizeDayByDepartment(schedule, weekStart, now, activeLogs, departmentByEmployeeId)
+      ).sort(([a], [b]) => departmentSortKey(a).localeCompare(departmentSortKey(b))),
+    [schedule, weekStart, now, activeLogs, departmentByEmployeeId]
   );
   const previousShiftNoShows = useMemo(
     () => previousHeadcount?.scheduled.filter((s) => !s.present) ?? [],
@@ -336,6 +421,31 @@ function Dashboard() {
           </div>
 
           <section className="rounded-xl bg-neutral-900 p-4">
+            <h2 className="mb-2 font-medium">Today&apos;s rotations by department</h2>
+            {departmentSummary.length === 0 ? (
+              <p className="text-sm text-neutral-400">Nothing timed scheduled today.</p>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {departmentSummary.map(([dept, shifts]) => (
+                  <div key={dept} className="rounded-lg bg-neutral-800/60 p-3">
+                    <p className="text-sm font-medium">{dept}</p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {shifts.map((s) => (
+                        <span
+                          key={s.columnLabel}
+                          className="rounded-full bg-neutral-900 px-2.5 py-1 text-xs text-neutral-300"
+                        >
+                          {s.columnLabel} {s.presentCount}/{s.scheduledCount}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-xl bg-neutral-900 p-4">
             <h2 className="mb-2 font-medium">
               Currently clocked in ({currentlyIn.length})
             </h2>
@@ -350,7 +460,13 @@ function Dashboard() {
                     key={s.punchIn.logId}
                     className="flex justify-between text-sm"
                   >
-                    <span>{s.employeeName}</span>
+                    <button
+                      type="button"
+                      onClick={() => setSummaryEmployeeId(s.employeeId)}
+                      className="hover:underline"
+                    >
+                      {s.employeeName}
+                    </button>
                     <span className="text-neutral-400">
                       since {localTime(s.punchIn.timestamp)}
                     </span>
@@ -394,80 +510,93 @@ function Dashboard() {
                 onChange={(e) => setEndDate(e.target.value)}
               />
             </label>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => setAddingPunch(true)}
+                className="flex items-center gap-1.5 rounded-lg bg-neutral-800 px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-700"
+              >
+                <Plus className="h-4 w-4" /> Add punch
+              </button>
+            )}
             <p className="ml-auto text-sm text-neutral-400">
-              Total: {formatDuration(totalMs)} across {filteredSessions.length}{" "}
-              session{filteredSessions.length === 1 ? "" : "s"}
+              In range: {formatDuration(totalMs)} across {filteredSessions.length}{" "}
+              shift{filteredSessions.length === 1 ? "" : "s"}
             </p>
           </section>
 
-          <div className="overflow-x-auto rounded-xl bg-neutral-900">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="bg-neutral-800/50 text-xs uppercase tracking-wide text-neutral-400">
-                  <th className="px-4 py-2.5 font-medium">Employee</th>
-                  <th className="px-4 py-2.5 font-medium">Date</th>
-                  <th className="px-4 py-2.5 font-medium">Punch in</th>
-                  <th className="px-4 py-2.5 font-medium">Punch out</th>
-                  <th className="px-4 py-2.5 font-medium">Duration</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredSessions.map((s) => (
-                  <tr
-                    key={s.punchIn.logId}
-                    className="border-t border-neutral-800 transition hover:bg-neutral-800/40"
+          <div className="flex flex-col gap-3">
+            {dayRows.length === 0 && (
+              <p className="rounded-xl bg-neutral-900 p-4 text-center text-sm text-neutral-400">
+                No attendance records match these filters.
+              </p>
+            )}
+            {dayRows.map((row) => (
+              <div key={`${row.employeeId}_${row.date}`} className="rounded-xl bg-neutral-900 p-4">
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setSummaryEmployeeId(row.employeeId)}
+                    className="font-medium hover:underline"
                   >
-                    <td className="px-4 py-2.5">{s.employeeName}</td>
-                    <td className="px-4 py-2.5">{localDate(s.punchIn.timestamp)}</td>
-                    <td className="px-4 py-2.5">
-                      <TimeCell
-                        log={s.punchIn}
-                        canEdit={canEdit}
-                        onEditClick={() => setEditingLog(s.punchIn)}
-                      />
-                    </td>
-                    <td className="px-4 py-2.5">
-                      {s.punchOut ? (
+                    {row.employeeName}
+                  </button>
+                  <span className="text-xs text-neutral-400">{row.date}</span>
+                </div>
+                <div className="mt-2 flex flex-col gap-1.5">
+                  {row.sessions.map((s) => (
+                    <div
+                      key={s.punchIn.logId}
+                      className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm"
+                    >
+                      <span className="flex flex-wrap items-center gap-1.5">
                         <TimeCell
-                          log={s.punchOut}
+                          log={s.punchIn}
                           canEdit={canEdit}
-                          onEditClick={() => setEditingLog(s.punchOut)}
+                          onEditClick={() => setEditingLog(s.punchIn)}
+                          onVoidClick={() => setVoidingLog(s.punchIn)}
                         />
-                      ) : (
-                        <span className="flex items-center gap-1.5">
-                          <span className="text-emerald-400">still in</span>
-                          {canEdit && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setClosingShiftFor({
-                                  employeeId: s.employeeId,
-                                  employeeName: s.employeeName,
-                                })
-                              }
-                              className="flex items-center gap-1 rounded-full bg-neutral-800 px-2 py-0.5 text-xs text-neutral-300 hover:bg-neutral-700"
-                              title="Close this shift (employee forgot to punch out)"
-                            >
-                              <LogOut className="h-3 w-3" /> Close shift
-                            </button>
-                          )}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      {s.durationMs !== null ? formatDuration(s.durationMs) : "—"}
-                    </td>
-                  </tr>
-                ))}
-                {filteredSessions.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-neutral-400">
-                      No attendance records match these filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                        <span className="text-neutral-600">→</span>
+                        {s.punchOut ? (
+                          <TimeCell
+                            log={s.punchOut}
+                            canEdit={canEdit}
+                            onEditClick={() => setEditingLog(s.punchOut as AttendanceLog)}
+                            onVoidClick={() => setVoidingLog(s.punchOut as AttendanceLog)}
+                          />
+                        ) : (
+                          <span className="flex items-center gap-1.5">
+                            <span className="text-emerald-400">still in</span>
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setClosingShiftFor({
+                                    employeeId: s.employeeId,
+                                    employeeName: s.employeeName,
+                                  })
+                                }
+                                className="flex items-center gap-1 rounded-full bg-neutral-800 px-2 py-0.5 text-xs text-neutral-300 hover:bg-neutral-700"
+                                title="Close this shift (employee forgot to punch out)"
+                              >
+                                <LogOut className="h-3 w-3" /> Close shift
+                              </button>
+                            )}
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-neutral-400">
+                        {s.durationMs !== null ? formatDuration(s.durationMs) : "—"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 flex items-center justify-between border-t border-neutral-800 pt-2 text-sm">
+                  <span className="text-neutral-400">Total</span>
+                  <span className="font-medium">{formatDuration(row.totalMs)}</span>
+                </div>
+              </div>
+            ))}
           </div>
         </>
       )}
@@ -490,6 +619,38 @@ function Dashboard() {
           editorName={displayName}
           onClose={() => setClosingShiftFor(null)}
           onSaved={handleShiftClosed}
+        />
+      )}
+
+      {voidingLog && (
+        <VoidModal
+          log={voidingLog}
+          editorUid={uid}
+          editorName={displayName}
+          onClose={() => setVoidingLog(null)}
+          onSaved={handleLogUpdated}
+        />
+      )}
+
+      {addingPunch && (
+        <AddPunchModal
+          employees={employees}
+          editorUid={uid}
+          editorName={displayName}
+          onClose={() => setAddingPunch(false)}
+          onSaved={handlePunchAdded}
+        />
+      )}
+
+      {summaryEmployeeId && (
+        <EmployeeSummaryPopup
+          employeeId={summaryEmployeeId}
+          employees={employees}
+          logs={logs}
+          schedule={schedule}
+          weekStart={weekStart}
+          now={now}
+          onClose={() => setSummaryEmployeeId(null)}
         />
       )}
 
@@ -639,13 +800,16 @@ function TimeCell({
   log,
   canEdit,
   onEditClick,
+  onVoidClick,
 }: {
   log: AttendanceLog;
   canEdit: boolean;
   onEditClick: () => void;
+  onVoidClick: () => void;
 }) {
   const editCount = log.edits?.length ?? 0;
   const status = punchStatus(log);
+  const voided = isVoided(log);
   return (
     <span className="flex items-center gap-1.5">
       {localTime(log.timestamp)}
@@ -697,7 +861,7 @@ function TimeCell({
           <Smartphone className="h-3 w-3" />
         </span>
       )}
-      {canEdit && (
+      {canEdit && !voided && (
         <button
           type="button"
           onClick={onEditClick}
@@ -705,6 +869,16 @@ function TimeCell({
           title="Edit this punch"
         >
           <Pencil className="h-3 w-3" />
+        </button>
+      )}
+      {canEdit && !voided && (
+        <button
+          type="button"
+          onClick={onVoidClick}
+          className="text-neutral-500 hover:text-red-400"
+          title="Void this punch (mistaken/duplicate)"
+        >
+          <Ban className="h-3 w-3" />
         </button>
       )}
     </span>
@@ -931,5 +1105,351 @@ function CloseShiftModal({
         </div>
       </div>
     </div>
+  );
+}
+
+// Marks a punch voided rather than deleting it — see voidAttendanceLog in
+// firestoreRepo.ts and the comment on AttendanceEdit.voided. Same shape
+// as EditAttendanceModal, but there's nothing to change except why.
+function VoidModal({
+  log,
+  editorUid,
+  editorName,
+  onClose,
+  onSaved,
+}: {
+  log: AttendanceLog;
+  editorUid: string;
+  editorName: string;
+  onClose: () => void;
+  onSaved: (updated: AttendanceLog) => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleVoid() {
+    if (!reason.trim()) {
+      setError("A reason is required.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await voidAttendanceLog(log, reason.trim(), editorUid, editorName);
+      onSaved({
+        ...log,
+        edits: [
+          ...(log.edits ?? []),
+          {
+            editedBy: editorUid,
+            editedByName: editorName,
+            reason: reason.trim(),
+            editedAt: new Date().toISOString(),
+            previousTimestamp: log.timestamp,
+            previousType: log.type,
+            voided: true,
+          },
+        ],
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to void punch");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+      <div className="flex w-full max-w-sm flex-col gap-4 rounded-xl bg-neutral-900 p-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">
+            Void {log.employeeName}&apos;s {log.type === "punch_in" ? "punch in" : "punch out"}
+          </h2>
+          <button type="button" onClick={onClose} className="text-neutral-400 hover:text-neutral-200">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <p className="text-sm text-neutral-400">
+          Stays in {log.employeeName}&apos;s history, marked voided — it just stops counting
+          toward hours, currently-clocked-in, and everything else live. It&apos;s never
+          actually deleted, and this can&apos;t be undone from here.
+        </p>
+        <label className="flex flex-col gap-1 text-sm">
+          Reason (required)
+          <textarea
+            className="min-h-20 rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-600"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. Duplicate punch, kiosk double-registered the tap"
+          />
+        </label>
+
+        {error && <p className="text-sm text-red-400">{error}</p>}
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-lg bg-neutral-800 px-4 py-2 text-sm text-neutral-300 hover:bg-neutral-700"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleVoid}
+            disabled={saving}
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:bg-neutral-700"
+          >
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            Void punch
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// A forgotten punch entered after the fact, either direction — same
+// underlying write as CloseShiftModal (createManualAttendanceLog), just
+// not locked to punch_out or to an employee already known to be missing
+// one.
+function AddPunchModal({
+  employees,
+  editorUid,
+  editorName,
+  onClose,
+  onSaved,
+}: {
+  employees: Employee[];
+  editorUid: string;
+  editorName: string;
+  onClose: () => void;
+  onSaved: (log: AttendanceLog) => void;
+}) {
+  const [employeeId, setEmployeeId] = useState("");
+  const [type, setType] = useState<PunchType>("punch_in");
+  const [newTime, setNewTime] = useState(() => toDatetimeLocalValue(new Date().toISOString()));
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    const employee = employees.find((e) => e.employeeId === employeeId);
+    if (!employee) {
+      setError("Pick an employee.");
+      return;
+    }
+    if (!reason.trim()) {
+      setError("A reason is required.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const newIso = new Date(newTime).toISOString();
+      const log = await createManualAttendanceLog(
+        employee.employeeId,
+        employee.fullName,
+        newIso,
+        type,
+        reason.trim(),
+        editorUid,
+        editorName
+      );
+      onSaved(log);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add punch");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+      <div className="flex w-full max-w-sm flex-col gap-4 rounded-xl bg-neutral-900 p-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Add a forgotten punch</h2>
+          <button type="button" onClick={onClose} className="text-neutral-400 hover:text-neutral-200">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <label className="flex flex-col gap-1 text-sm">
+          Employee
+          <select
+            className="rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-600"
+            value={employeeId}
+            onChange={(e) => setEmployeeId(e.target.value)}
+          >
+            <option value="">Select…</option>
+            {employees.map((e) => (
+              <option key={e.employeeId} value={e.employeeId}>
+                {e.fullName}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm">
+          Type
+          <select
+            className="rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-600"
+            value={type}
+            onChange={(e) => setType(e.target.value as PunchType)}
+          >
+            <option value="punch_in">Punch in</option>
+            <option value="punch_out">Punch out</option>
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm">
+          Time
+          <input
+            type="datetime-local"
+            className="rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-600"
+            value={newTime}
+            onChange={(e) => setNewTime(e.target.value)}
+          />
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm">
+          Reason (required)
+          <textarea
+            className="min-h-20 rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-600"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. Forgot to punch in this morning, confirmed with them"
+          />
+        </label>
+
+        {error && <p className="text-sm text-red-400">{error}</p>}
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-lg bg-neutral-800 px-4 py-2 text-sm text-neutral-300 hover:bg-neutral-700"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-neutral-700"
+          >
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            Add punch
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Tap an employee's name anywhere on the dashboard to see this: their
+// live status if they're currently clocked in, their last two completed
+// shifts (from the full, unfiltered log — a voided one still shows up
+// here, just visibly marked), a link to their full history, and their
+// next scheduled shift.
+function EmployeeSummaryPopup({
+  employeeId,
+  employees,
+  logs,
+  schedule,
+  weekStart,
+  now,
+  onClose,
+}: {
+  employeeId: string;
+  employees: Employee[];
+  logs: AttendanceLog[];
+  schedule: WeekSchedule | null;
+  weekStart: Date;
+  now: Date;
+  onClose: () => void;
+}) {
+  const employee = employees.find((e) => e.employeeId === employeeId);
+
+  const sessions = useMemo(
+    () => pairSessions(logs.filter((l) => l.employeeId === employeeId)),
+    [logs, employeeId]
+  );
+  const current = sessions.find((s) => s.punchOut === null) ?? null;
+  const completed = sessions.filter((s) => s.punchOut !== null).slice(0, 2);
+  const next = useMemo(
+    () => nextScheduledShift(schedule, weekStart, now, employeeId),
+    [schedule, weekStart, now, employeeId]
+  );
+
+  if (!employee) return null;
+
+  return (
+    <DetailSheet title={employee.fullName} onClose={onClose}>
+      {current ? (
+        <div className="rounded-lg bg-emerald-900/20 p-3">
+          <p className="text-sm text-emerald-300">
+            Clocked in since {localTime(current.punchIn.timestamp)}
+          </p>
+          <p className="text-lg font-semibold">
+            {formatDuration(now.getTime() - new Date(current.punchIn.timestamp).getTime())} so
+            far
+          </p>
+        </div>
+      ) : (
+        <p className="text-sm text-neutral-400">Not currently clocked in.</p>
+      )}
+
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+          Previous shifts
+        </p>
+        {completed.length === 0 ? (
+          <p className="mt-1 text-sm text-neutral-400">No completed shifts yet.</p>
+        ) : (
+          <ul className="mt-1 flex flex-col gap-1.5 text-sm">
+            {completed.map((s) => {
+              const status = punchStatus(s.punchIn);
+              return (
+                <li key={s.punchIn.logId} className="flex items-center justify-between gap-2">
+                  <span>
+                    {localDate(s.punchIn.timestamp)} · {localTime(s.punchIn.timestamp)}–
+                    {s.punchOut ? localTime(s.punchOut.timestamp) : "?"}
+                  </span>
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <StatusBadge label={status.label} tone={status.tone} />
+                    <span className="text-neutral-400">
+                      {s.durationMs !== null ? formatDuration(s.durationMs) : "—"}
+                    </span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      <Link
+        href={`/admin/employees?employeeId=${employee.employeeId}`}
+        className="text-sm text-blue-400 hover:underline"
+      >
+        Full details →
+      </Link>
+
+      <div className="border-t border-neutral-800 pt-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+          Next scheduled shift
+        </p>
+        <p className="mt-1 text-sm text-neutral-300">
+          {next
+            ? `${next.dayLabel} · ${next.columnLabel}, ${next.start.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}`
+            : "Nothing scheduled this week."}
+        </p>
+      </div>
+    </DetailSheet>
   );
 }

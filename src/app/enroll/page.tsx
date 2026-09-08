@@ -5,6 +5,7 @@ import { Camera, CheckCircle2, Loader2 } from "lucide-react";
 import { CameraView } from "@/components/CameraView";
 import { RequireAdmin, usePermissions } from "@/components/RequireAdmin";
 import { PageHeader } from "@/components/PageHeader";
+import { DepartmentPicker } from "@/components/DepartmentPicker";
 import { useCamera } from "@/hooks/useCamera";
 import { useFaceModels } from "@/hooks/useFaceModels";
 import { detectSingleFaceDescriptor } from "@/lib/faceApi";
@@ -51,6 +52,7 @@ function EnrollForm() {
   const [fullName, setFullName] = useState("");
   const [pinCode, setPinCode] = useState("");
   const [role, setRole] = useState<Employee["role"]>("employee");
+  const [department, setDepartment] = useState("");
   const [consentChecked, setConsentChecked] = useState(false);
 
   const [descriptors, setDescriptors] = useState<number[][]>([]);
@@ -139,6 +141,7 @@ function EnrollForm() {
         role,
         active: true,
         createdAt: now,
+        ...(department.trim() ? { department: department.trim() } : {}),
         ...(hasFaceData
           ? {
               consent: {
@@ -153,6 +156,7 @@ function EnrollForm() {
       setSaveState("saved");
       setFullName("");
       setPinCode("");
+      setDepartment("");
       setConsentChecked(false);
       setDescriptors([]);
     } catch (err) {
@@ -260,6 +264,8 @@ function EnrollForm() {
             <option value="admin">Admin</option>
           </select>
         </label>
+
+        <DepartmentPicker value={department} onChange={setDepartment} />
 
         {captureFace && (
           <div className="flex flex-col gap-2 rounded-lg bg-neutral-800 p-3 text-sm">

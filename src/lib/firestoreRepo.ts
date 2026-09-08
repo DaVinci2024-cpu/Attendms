@@ -194,6 +194,13 @@ export async function updateEmployeeName(
   await updateDoc(doc(employeesCol(), employeeId), { fullName });
 }
 
+export async function updateEmployeeDepartment(
+  employeeId: string,
+  department: string
+): Promise<void> {
+  await updateDoc(doc(employeesCol(), employeeId), { department });
+}
+
 // There's no "current PIN" to show an admin — pinHash is one-way (see
 // src/lib/pin.ts), so editing a PIN can only ever mean replacing it with
 // a new one, never revealing/editing the existing value in place.
@@ -393,6 +400,71 @@ export async function closeShift(
   };
   await setDoc(doc(attendanceCol(), log.logId), log);
   return log;
+}
+
+// A forgotten punch entered after the fact — either direction, unlike
+// closeShift above which is always a punch_out. Same shape/audit pattern:
+// a real record from the moment it's created, not an edit to one that
+// doesn't exist, with the reason as its first (and so far only) edit
+// entry so it's obviously a manual entry, not a real kiosk punch.
+export async function createManualAttendanceLog(
+  employeeId: string,
+  employeeName: string,
+  timestamp: string,
+  type: AttendanceLog["type"],
+  reason: string,
+  editedBy: string,
+  editedByName: string
+): Promise<AttendanceLog> {
+  const log: AttendanceLog = {
+    logId: `log_${crypto.randomUUID()}`,
+    employeeId,
+    employeeName,
+    timestamp,
+    type,
+    matchConfidence: 0,
+    pinConfirmed: false,
+    kioskId: "admin_correction",
+    syncedOffline: false,
+    edits: [
+      {
+        editedBy,
+        editedByName,
+        reason,
+        editedAt: new Date().toISOString(),
+        previousTimestamp: null,
+        previousType: null,
+      },
+    ],
+  };
+  await setDoc(doc(attendanceCol(), log.logId), log);
+  return log;
+}
+
+// Marks a record voided (a mistaken/duplicate punch) rather than deleting
+// it — attendance is permanently delete-blocked at the rules layer on
+// purpose (see firestore.rules), so "removing" a bad record means it
+// stops counting everywhere live (currently-clocked-in, hours, no-shows)
+// from here on, while the record itself, and the fact that it was
+// voided and by whom, stays in that employee's history for good.
+export async function voidAttendanceLog(
+  log: AttendanceLog,
+  reason: string,
+  editedBy: string,
+  editedByName: string
+): Promise<void> {
+  const edit: AttendanceEdit = {
+    editedBy,
+    editedByName,
+    reason,
+    editedAt: new Date().toISOString(),
+    previousTimestamp: log.timestamp,
+    previousType: log.type,
+    voided: true,
+  };
+  await updateDoc(doc(attendanceCol(), log.logId), {
+    edits: arrayUnion(edit),
+  });
 }
 
 // Most recent first. limitCount keeps the portal/admin feed from pulling

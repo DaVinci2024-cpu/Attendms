@@ -188,3 +188,94 @@ export function noShowsToday(
   }
   return result;
 }
+
+export interface DepartmentShiftSummary {
+  columnLabel: string;
+  start: Date;
+  end: Date;
+  scheduledCount: number;
+  presentCount: number;
+}
+
+// Today's timed shifts, grouped by department — no separate "rotation
+// count" config needed per department (doctors run 3 a day, nurses 2,
+// etc.): the schedule itself already implies it, however many of today's
+// columns actually have someone from that department assigned. Anyone
+// with no department set groups under "Unassigned".
+export function summarizeDayByDepartment(
+  schedule: WeekSchedule | null,
+  weekStart: Date,
+  now: Date,
+  logs: AttendanceLog[],
+  departmentByEmployeeId: Map<string, string>
+): Map<string, DepartmentShiftSummary[]> {
+  const result = new Map<string, DepartmentShiftSummary[]>();
+  const row = todayRow(schedule, weekStart, now);
+  if (!row || !schedule) return result;
+  for (const col of schedule.columns) {
+    if (!col.startTime || !col.endTime) continue;
+    const start = timeOnDate(now, col.startTime);
+    const end = timeOnDate(now, col.endTime);
+    const isPresent = presentDuringWindow(logs, start, end);
+    const byDept = new Map<string, { scheduled: number; present: number }>();
+    for (const a of cellAssignments(row.cells, col.columnId)) {
+      const dept = departmentByEmployeeId.get(a.employeeId) ?? "Unassigned";
+      const counts = byDept.get(dept) ?? { scheduled: 0, present: 0 };
+      counts.scheduled += 1;
+      if (isPresent(a.employeeId)) counts.present += 1;
+      byDept.set(dept, counts);
+    }
+    for (const [dept, counts] of byDept) {
+      const list = result.get(dept) ?? [];
+      list.push({
+        columnLabel: col.label,
+        start,
+        end,
+        scheduledCount: counts.scheduled,
+        presentCount: counts.present,
+      });
+      result.set(dept, list);
+    }
+  }
+  for (const list of result.values()) {
+    list.sort((a, b) => a.start.getTime() - b.start.getTime());
+  }
+  return result;
+}
+
+export interface UpcomingShift {
+  columnLabel: string;
+  start: Date;
+  end: Date;
+  dayLabel: string;
+}
+
+// The next timed shift this employee is assigned to, starting from
+// `now` — the rest of today first, then each following day within the
+// same posted week (doesn't look into next week's schedule). Null if
+// nothing timed remains this week, or nothing's assigned to them at all.
+export function nextScheduledShift(
+  schedule: WeekSchedule | null,
+  weekStart: Date,
+  now: Date,
+  employeeId: string
+): UpcomingShift | null {
+  if (!schedule) return null;
+  for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+    const date = new Date(now);
+    date.setDate(date.getDate() + dayOffset);
+    const row = todayRow(schedule, weekStart, date);
+    if (!row) continue;
+    const windows = timedWindowsForRow(row, schedule.columns, date)
+      .filter((w) =>
+        cellAssignments(row.cells, w.column.columnId).some((a) => a.employeeId === employeeId)
+      )
+      .filter((w) => dayOffset > 0 || w.start.getTime() > now.getTime())
+      .sort((a, b) => a.start.getTime() - b.start.getTime());
+    if (windows.length > 0) {
+      const w = windows[0];
+      return { columnLabel: w.column.label, start: w.start, end: w.end, dayLabel: row.label };
+    }
+  }
+  return null;
+}
