@@ -1,0 +1,190 @@
+import { cellAssignments } from "./schedule";
+import { todayRow, timeOnDate } from "./punchRules";
+import type { AttendanceLog, ScheduleColumn, ScheduleRow, WeekSchedule } from "./types";
+
+export interface ShiftWindow {
+  column: ScheduleColumn;
+  row: ScheduleRow;
+  start: Date;
+  end: Date;
+}
+
+function timedWindowsForRow(
+  row: ScheduleRow,
+  columns: ScheduleColumn[],
+  date: Date
+): ShiftWindow[] {
+  const windows: ShiftWindow[] = [];
+  for (const col of columns) {
+    if (!col.startTime || !col.endTime) continue;
+    windows.push({
+      column: col,
+      row,
+      start: timeOnDate(date, col.startTime),
+      end: timeOnDate(date, col.endTime),
+    });
+  }
+  return windows;
+}
+
+// Every timed shift running right now — there can be more than one with
+// overlapping columns. Empty if nothing's scheduled today, or nothing
+// timed is currently active.
+export function activeShifts(
+  schedule: WeekSchedule | null,
+  weekStart: Date,
+  now: Date
+): ShiftWindow[] {
+  const row = todayRow(schedule, weekStart, now);
+  if (!row || !schedule) return [];
+  return timedWindowsForRow(row, schedule.columns, now).filter(
+    (w) => now.getTime() >= w.start.getTime() && now.getTime() < w.end.getTime()
+  );
+}
+
+// The single shift that most recently finished as of `now` — today's
+// latest-ending column that's already over, or (before anything's ended
+// yet today, e.g. early morning) yesterday's last one. Null if neither
+// day has a timed shift at all. Doesn't look back further than
+// yesterday, and yesterday's row only resolves within the same
+// calendar week as `weekStart` — a shift ending right after midnight on
+// a Monday won't find last Sunday's, which belongs to the prior week.
+export function mostRecentlyEndedShift(
+  schedule: WeekSchedule | null,
+  weekStart: Date,
+  now: Date
+): ShiftWindow | null {
+  if (!schedule) return null;
+  const todaysRow = todayRow(schedule, weekStart, now);
+  if (todaysRow) {
+    const ended = timedWindowsForRow(todaysRow, schedule.columns, now)
+      .filter((w) => w.end.getTime() <= now.getTime())
+      .sort((a, b) => b.end.getTime() - a.end.getTime());
+    if (ended.length > 0) return ended[0];
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdaysRow = todayRow(schedule, weekStart, yesterday);
+  if (!yesterdaysRow) return null;
+  const windows = timedWindowsForRow(yesterdaysRow, schedule.columns, yesterday).sort(
+    (a, b) => b.end.getTime() - a.end.getTime()
+  );
+  return windows[0] ?? null;
+}
+
+export interface ShiftAttendanceSummary {
+  shiftLabel: string;
+  start: Date;
+  end: Date;
+  scheduledCount: number;
+  presentCount: number;
+  scheduled: { employeeId: string; employeeName: string; present: boolean }[];
+}
+
+// Headcount for one or more (concurrent) shift windows — who's scheduled
+// across them (deduped) and how many of those `isPresent` says yes to.
+// The caller decides what "present" means: currently clocked in, for a
+// still-running shift, or "punched in at all during the window", for one
+// that's already over — see the two call sites in the dashboard.
+export function summarizeShiftAttendance(
+  windows: ShiftWindow[],
+  isPresent: (employeeId: string) => boolean
+): ShiftAttendanceSummary | null {
+  if (windows.length === 0) return null;
+  const start = new Date(Math.min(...windows.map((w) => w.start.getTime())));
+  const end = new Date(Math.max(...windows.map((w) => w.end.getTime())));
+  const scheduled = new Map<
+    string,
+    { employeeId: string; employeeName: string; present: boolean }
+  >();
+  for (const w of windows) {
+    for (const a of cellAssignments(w.row.cells, w.column.columnId)) {
+      if (!scheduled.has(a.employeeId)) {
+        scheduled.set(a.employeeId, {
+          employeeId: a.employeeId,
+          employeeName: a.employeeName,
+          present: isPresent(a.employeeId),
+        });
+      }
+    }
+  }
+  const list = Array.from(scheduled.values());
+  return {
+    shiftLabel: windows.map((w) => w.column.label).join(" + "),
+    start,
+    end,
+    scheduledCount: list.length,
+    presentCount: list.filter((s) => s.present).length,
+    scheduled: list,
+  };
+}
+
+// Whether an employeeId punched in at any point inside [start, end) —
+// used to judge a shift that's already over ("did they show up at all"),
+// as opposed to "currently clocked in" which only makes sense for one
+// that's still running.
+export function presentDuringWindow(
+  logs: AttendanceLog[],
+  start: Date,
+  end: Date
+): (employeeId: string) => boolean {
+  const present = new Set<string>();
+  for (const log of logs) {
+    if (log.type !== "punch_in") continue;
+    const t = new Date(log.timestamp).getTime();
+    if (t >= start.getTime() && t < end.getTime()) present.add(log.employeeId);
+  }
+  return (employeeId) => present.has(employeeId);
+}
+
+export interface NoShow {
+  employeeId: string;
+  employeeName: string;
+  columnLabel: string;
+  startTime: string;
+}
+
+// Anyone on today's schedule for a shift whose start (plus the same
+// late-arrival grace the kiosk itself uses) has already passed, who
+// hasn't punched in at all yet today — not tied to which specific shift
+// they eventually clock into if they're scheduled for more than one,
+// just "have they shown up today at all". An employee already flagged
+// under an earlier shift isn't listed again for a later one.
+export function noShowsToday(
+  schedule: WeekSchedule | null,
+  weekStart: Date,
+  now: Date,
+  logs: AttendanceLog[],
+  lateGraceMs: number
+): NoShow[] {
+  const row = todayRow(schedule, weekStart, now);
+  if (!row || !schedule) return [];
+  const todayKey = now.toLocaleDateString("en-CA");
+  const punchedInToday = new Set(
+    logs
+      .filter(
+        (l) =>
+          l.type === "punch_in" &&
+          new Date(l.timestamp).toLocaleDateString("en-CA") === todayKey
+      )
+      .map((l) => l.employeeId)
+  );
+  const seen = new Set<string>();
+  const result: NoShow[] = [];
+  for (const col of schedule.columns) {
+    if (!col.startTime) continue;
+    const start = timeOnDate(now, col.startTime);
+    if (now.getTime() < start.getTime() + lateGraceMs) continue;
+    for (const a of cellAssignments(row.cells, col.columnId)) {
+      if (seen.has(a.employeeId) || punchedInToday.has(a.employeeId)) continue;
+      seen.add(a.employeeId);
+      result.push({
+        employeeId: a.employeeId,
+        employeeName: a.employeeName,
+        columnLabel: col.label,
+        startTime: col.startTime,
+      });
+    }
+  }
+  return result;
+}

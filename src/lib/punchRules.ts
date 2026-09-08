@@ -14,7 +14,7 @@ export interface ResolvedShift {
   status: ShiftPunchInStatus;
 }
 
-function dayIndexOf(weekStart: Date, now: Date): number {
+export function dayIndexOf(weekStart: Date, now: Date): number {
   const startMid = new Date(weekStart);
   startMid.setHours(0, 0, 0, 0);
   const nowMid = new Date(now);
@@ -22,14 +22,14 @@ function dayIndexOf(weekStart: Date, now: Date): number {
   return Math.round((nowMid.getTime() - startMid.getTime()) / 86400000);
 }
 
-function timeOnDate(date: Date, hhmm: string): Date {
+export function timeOnDate(date: Date, hhmm: string): Date {
   const [h, m] = hhmm.split(":").map(Number);
   const d = new Date(date);
   d.setHours(h, m, 0, 0);
   return d;
 }
 
-function todayRow(schedule: WeekSchedule | null, weekStart: Date, now: Date) {
+export function todayRow(schedule: WeekSchedule | null, weekStart: Date, now: Date) {
   if (!schedule) return null;
   const index = dayIndexOf(weekStart, now);
   if (index < 0 || index > 6) return null;
