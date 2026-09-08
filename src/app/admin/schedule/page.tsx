@@ -310,14 +310,20 @@ function ScheduleGrid() {
   }
 
   // A column with either time left blank gets no lateness/early-leave
-  // enforcement at the kiosk — both must be set for that to apply.
+  // enforcement at the kiosk — both must be set for that to apply. Clearing
+  // a time removes the key rather than setting it to undefined, since
+  // Firestore's setDoc rejects an explicit undefined field value.
   function setColumnTime(columnId: string, field: "startTime" | "endTime", value: string) {
     setSchedule((prev) =>
       prev
         ? {
             ...prev,
             columns: prev.columns.map((c) =>
-              c.columnId === columnId ? { ...c, [field]: value || undefined } : c
+              c.columnId === columnId
+                ? value
+                  ? { ...c, [field]: value }
+                  : (omitKey(c as unknown as Record<string, unknown>, field) as unknown as ScheduleColumn)
+                : c
             ),
           }
         : prev
@@ -385,11 +391,17 @@ function ScheduleGrid() {
             ...prev,
             columns: [
               ...prev.columns,
-              {
-                columnId: `col_${crypto.randomUUID()}`,
-                label: "New column",
-                department: activeDeptResolved === UNASSIGNED_DEPARTMENT ? undefined : activeDeptResolved,
-              },
+              // Firestore's setDoc rejects an explicit `undefined` field
+              // (this SDK isn't configured with ignoreUndefinedProperties),
+              // so an "Unassigned" column simply omits `department` rather
+              // than setting it to undefined.
+              activeDeptResolved === UNASSIGNED_DEPARTMENT
+                ? { columnId: `col_${crypto.randomUUID()}`, label: "New column" }
+                : {
+                    columnId: `col_${crypto.randomUUID()}`,
+                    label: "New column",
+                    department: activeDeptResolved,
+                  },
             ],
           }
         : prev
@@ -614,11 +626,14 @@ function ScheduleGrid() {
             }
           }
 
-          return {
-            ...targetRow,
-            cells: nextCells,
-            supervisors: Object.keys(nextSupervisors).length > 0 ? nextSupervisors : undefined,
-          };
+          // Firestore's setDoc rejects an explicit `undefined` field, so an
+          // empty supervisors map is left out of the row entirely rather
+          // than set to undefined.
+          const nextRow = { ...targetRow, cells: nextCells };
+          if (Object.keys(nextSupervisors).length > 0) {
+            return { ...nextRow, supervisors: nextSupervisors };
+          }
+          return omitKey(nextRow as unknown as Record<string, unknown>, "supervisors") as typeof nextRow;
         });
 
         const now = new Date().toISOString();
