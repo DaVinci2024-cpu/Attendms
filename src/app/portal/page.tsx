@@ -34,6 +34,13 @@ import {
   saveAvailability,
 } from "@/lib/firestoreRepo";
 import { pairSessions, formatDuration } from "@/lib/hours";
+import { localDate, localTime } from "@/lib/dateFormat";
+import {
+  COMPANY_TIME_ZONE,
+  companyDateKeyToUtc,
+  companyFields,
+  companyTimeToUtc,
+} from "@/lib/companyTime";
 import { computeEmployeePerformance, type EmployeePerformance } from "@/lib/performance";
 import { cellAssignments } from "@/lib/schedule";
 import { mondayOf, toWeekId, weekIdsBack } from "@/lib/week";
@@ -201,14 +208,6 @@ function ForcedPasswordChange({
   );
 }
 
-function localDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-CA");
-}
-
-function localTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
 function PortalDashboard({ employee }: { employee: Employee }) {
   const [logs, setLogs] = useState<AttendanceLog[] | null>(null);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -252,7 +251,7 @@ function PortalDashboard({ employee }: { employee: Employee }) {
       setPerformanceLoading(true);
       try {
         const weekIds = weekIdsBack(4);
-        const periodStart = new Date(`${weekIds[weekIds.length - 1]}T00:00:00`).getTime();
+        const periodStart = companyDateKeyToUtc(weekIds[weekIds.length - 1]).getTime();
         const schedulesRaw = await Promise.all(weekIds.map((id) => fetchWeekSchedule(id)));
         if (cancelled) return;
         const schedules = schedulesRaw.filter((s): s is WeekSchedule => s !== null);
@@ -360,9 +359,8 @@ function PortalDashboard({ employee }: { employee: Employee }) {
 
   function goToWeek(offsetWeeks: number) {
     setWeekStart((prev) => {
-      const next = new Date(prev);
-      next.setDate(next.getDate() + offsetWeeks * 7);
-      return mondayOf(next);
+      const { year, month, day } = companyFields(prev);
+      return mondayOf(companyTimeToUtc(year, month, day + offsetWeeks * 7));
     });
   }
 
@@ -414,15 +412,16 @@ function PortalDashboard({ employee }: { employee: Employee }) {
   }
 
   const thisWeekId = toWeekId(mondayOf(new Date()));
+  const weekStartFields = companyFields(weekStart);
   const weekDays = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(weekStart);
-    d.setDate(d.getDate() + i);
+    const d = companyTimeToUtc(weekStartFields.year, weekStartFields.month, weekStartFields.day + i);
     return {
       dateKey: toWeekId(d),
       label: d.toLocaleDateString(undefined, {
         weekday: "short",
         month: "short",
         day: "numeric",
+        timeZone: COMPANY_TIME_ZONE,
       }),
     };
   });
@@ -460,7 +459,8 @@ function PortalDashboard({ employee }: { employee: Employee }) {
             <div key={a.announcementId} className="rounded-lg bg-neutral-800/60 px-3 py-2">
               <p className="text-sm">{a.message}</p>
               <p className="mt-1 text-xs text-neutral-500">
-                {a.postedByName} · {new Date(a.postedAt).toLocaleString()}
+                {a.postedByName} ·{" "}
+                {new Date(a.postedAt).toLocaleString(undefined, { timeZone: COMPANY_TIME_ZONE })}
               </p>
             </div>
           ))}

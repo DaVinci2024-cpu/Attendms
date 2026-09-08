@@ -1,3 +1,4 @@
+import { companyDateKey, companyFields, companyTimeToUtc } from "./companyTime";
 import { cellAssignments } from "./schedule";
 import { todayRow, timeOnDate } from "./punchRules";
 import type { AttendanceLog, ScheduleColumn, ScheduleRow, WeekSchedule } from "./types";
@@ -62,8 +63,8 @@ export function mostRecentlyEndedShift(
       .sort((a, b) => b.end.getTime() - a.end.getTime());
     if (ended.length > 0) return ended[0];
   }
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
+  const nf = companyFields(now);
+  const yesterday = companyTimeToUtc(nf.year, nf.month, nf.day - 1);
   const yesterdaysRow = todayRow(schedule, weekStart, yesterday);
   if (!yesterdaysRow) return null;
   const windows = timedWindowsForRow(yesterdaysRow, schedule.columns, yesterday).sort(
@@ -159,14 +160,10 @@ export function noShowsToday(
 ): NoShow[] {
   const row = todayRow(schedule, weekStart, now);
   if (!row || !schedule) return [];
-  const todayKey = now.toLocaleDateString("en-CA");
+  const todayKey = companyDateKey(now);
   const punchedInToday = new Set(
     logs
-      .filter(
-        (l) =>
-          l.type === "punch_in" &&
-          new Date(l.timestamp).toLocaleDateString("en-CA") === todayKey
-      )
+      .filter((l) => l.type === "punch_in" && companyDateKey(new Date(l.timestamp)) === todayKey)
       .map((l) => l.employeeId)
   );
   const seen = new Set<string>();
@@ -261,9 +258,9 @@ export function nextScheduledShift(
   employeeId: string
 ): UpcomingShift | null {
   if (!schedule) return null;
+  const nf = companyFields(now);
   for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
-    const date = new Date(now);
-    date.setDate(date.getDate() + dayOffset);
+    const date = companyTimeToUtc(nf.year, nf.month, nf.day + dayOffset);
     const row = todayRow(schedule, weekStart, date);
     if (!row) continue;
     const windows = timedWindowsForRow(row, schedule.columns, date)

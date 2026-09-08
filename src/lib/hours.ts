@@ -1,4 +1,5 @@
-import { localDate } from "./dateFormat";
+import { companyFields, companyTimeToUtc } from "./companyTime";
+import { localDate, localTime } from "./dateFormat";
 import type { AttendanceLog } from "./types";
 
 export interface WorkSession {
@@ -112,19 +113,18 @@ export function groupSessionsByDay(sessions: WorkSession[], now: Date): DayRow[]
   return rows;
 }
 
-// Averages a list of ISO timestamps' local time-of-day (ignoring the
-// date part) — e.g. "usually punches in around 8:52 AM". Returns null
-// for an empty list, since there's nothing to average.
+// Averages a list of ISO timestamps' time-of-day in Kampala (ignoring
+// the date part) — e.g. "usually punches in around 8:52 AM". Returns
+// null for an empty list, since there's nothing to average.
 export function averageTimeOfDay(timestamps: string[]): string | null {
   if (timestamps.length === 0) return null;
   const totalMinutes = timestamps.reduce((sum, iso) => {
-    const d = new Date(iso);
-    return sum + d.getHours() * 60 + d.getMinutes();
+    const { hour, minute } = companyFields(new Date(iso));
+    return sum + hour * 60 + minute;
   }, 0);
   const avgMinutes = Math.round(totalMinutes / timestamps.length) % (24 * 60);
-  const d = new Date();
-  d.setHours(Math.floor(avgMinutes / 60), avgMinutes % 60, 0, 0);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const fakeInstant = companyTimeToUtc(2000, 0, 1, Math.floor(avgMinutes / 60), avgMinutes % 60);
+  return localTime(fakeInstant.toISOString());
 }
 
 export function formatDuration(ms: number): string {

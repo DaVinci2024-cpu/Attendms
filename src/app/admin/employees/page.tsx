@@ -35,6 +35,8 @@ import { createEmployeePortalAccount } from "@/lib/auth";
 import { findByPin, hashPin, PIN_PATTERN } from "@/lib/pin";
 import { averageTimeOfDay, formatDuration, pairSessions, type WorkSession } from "@/lib/hours";
 import { punchStatus } from "@/lib/attendanceStatus";
+import { localTime } from "@/lib/dateFormat";
+import { COMPANY_TIME_ZONE } from "@/lib/companyTime";
 import { portalEmail } from "@/lib/constants";
 import type { Employee } from "@/lib/types";
 
@@ -633,24 +635,16 @@ function EmployeeHistoryPanel({ employee }: { employee: Employee }) {
                         month: "short",
                         day: "numeric",
                         year: "numeric",
+                        timeZone: COMPANY_TIME_ZONE,
                       })}
                     </span>
                     <StatusBadge label={status.label} tone={status.tone} />
                   </div>
                   <div className="mt-1 flex items-center justify-between text-xs text-neutral-400">
                     <span>
-                      In{" "}
-                      {new Date(s.punchIn.timestamp).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      In {localTime(s.punchIn.timestamp)}
                       {" · Out "}
-                      {s.punchOut
-                        ? new Date(s.punchOut.timestamp).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
-                        : "still in"}
+                      {s.punchOut ? localTime(s.punchOut.timestamp) : "still in"}
                     </span>
                     <span>{s.durationMs !== null ? formatDuration(s.durationMs) : "—"}</span>
                   </div>

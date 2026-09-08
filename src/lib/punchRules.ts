@@ -1,4 +1,5 @@
 import { EARLY_PUNCH_OUT_GRACE_MS, LATE_PUNCH_IN_GRACE_MS } from "./constants";
+import { companyFields, companyTimeToUtc } from "./companyTime";
 import { cellAssignments } from "./schedule";
 import type { ScheduleColumn, ShiftSupervisor, WeekSchedule } from "./types";
 
@@ -14,19 +15,25 @@ export interface ResolvedShift {
   status: ShiftPunchInStatus;
 }
 
+// Day index (0 = the week's Monday .. 6 = Sunday) that `now` falls on,
+// counted by Kampala calendar days — not the viewing device's own
+// timezone, so which schedule row is "today" doesn't depend on where
+// whoever's looking happens to be.
 export function dayIndexOf(weekStart: Date, now: Date): number {
-  const startMid = new Date(weekStart);
-  startMid.setHours(0, 0, 0, 0);
-  const nowMid = new Date(now);
-  nowMid.setHours(0, 0, 0, 0);
+  const start = companyFields(weekStart);
+  const startMid = companyTimeToUtc(start.year, start.month, start.day);
+  const n = companyFields(now);
+  const nowMid = companyTimeToUtc(n.year, n.month, n.day);
   return Math.round((nowMid.getTime() - startMid.getTime()) / 86400000);
 }
 
+// A real instant for "hh:mm on `date`'s calendar day", both read in
+// Kampala time — e.g. a shift's 08:00 start time anchored onto today,
+// regardless of the browser's own timezone.
 export function timeOnDate(date: Date, hhmm: string): Date {
   const [h, m] = hhmm.split(":").map(Number);
-  const d = new Date(date);
-  d.setHours(h, m, 0, 0);
-  return d;
+  const { year, month, day } = companyFields(date);
+  return companyTimeToUtc(year, month, day, h, m);
 }
 
 export function todayRow(schedule: WeekSchedule | null, weekStart: Date, now: Date) {

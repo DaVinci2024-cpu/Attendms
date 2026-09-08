@@ -33,6 +33,12 @@ import {
 import { cellAssignments, defaultColumns } from "@/lib/schedule";
 import { columnColor, type ColumnColor } from "@/lib/columnColors";
 import { mondayOf, toWeekId } from "@/lib/week";
+import {
+  COMPANY_TIME_ZONE,
+  companyDateKeyToUtc,
+  companyFields,
+  companyTimeToUtc,
+} from "@/lib/companyTime";
 import type {
   AvailabilityEntry,
   Employee,
@@ -54,14 +60,15 @@ const DAY_NAMES = [
 ];
 
 function defaultRows(monday: Date) {
+  const { year, month, day } = companyFields(monday);
   return DAY_NAMES.map((name, i) => {
-    const d = new Date(monday);
-    d.setDate(d.getDate() + i);
+    const d = companyTimeToUtc(year, month, day + i);
     return {
       rowId: `row_${crypto.randomUUID()}`,
       label: `${name}, ${d.toLocaleDateString(undefined, {
         month: "short",
         day: "numeric",
+        timeZone: COMPANY_TIME_ZONE,
       })}`,
       cells: {},
     };
@@ -439,9 +446,8 @@ function ScheduleGrid() {
       return;
     }
     setWeekStart((prev) => {
-      const next = new Date(prev);
-      next.setDate(next.getDate() + offsetWeeks * 7);
-      return mondayOf(next);
+      const { year, month, day } = companyFields(prev);
+      return mondayOf(companyTimeToUtc(year, month, day + offsetWeeks * 7));
     });
   }
 
@@ -739,10 +745,11 @@ function ScheduleGrid() {
                         .sort(([a], [b]) => a.localeCompare(b))
                         .map(([dateKey, slots]) => (
                           <li key={dateKey}>
-                            {new Date(`${dateKey}T00:00:00`).toLocaleDateString(undefined, {
+                            {companyDateKeyToUtc(dateKey).toLocaleDateString(undefined, {
                               weekday: "short",
                               month: "short",
                               day: "numeric",
+                              timeZone: COMPANY_TIME_ZONE,
                             })}
                             : {slots.map((s) => s.columnLabel).join(", ")}
                           </li>
@@ -764,12 +771,16 @@ function ScheduleGrid() {
               <History className="h-3.5 w-3.5 shrink-0" />
               <span>
                 Created by {schedule.createdByName ?? "—"} on{" "}
-                {new Date(schedule.createdAt).toLocaleString()}
+                {new Date(schedule.createdAt).toLocaleString(undefined, {
+                  timeZone: COMPANY_TIME_ZONE,
+                })}
                 {schedule.updatedAt !== schedule.createdAt && schedule.updatedByName && (
                   <>
                     {" "}
                     · Last edited by {schedule.updatedByName} on{" "}
-                    {new Date(schedule.updatedAt).toLocaleString()}
+                    {new Date(schedule.updatedAt).toLocaleString(undefined, {
+                      timeZone: COMPANY_TIME_ZONE,
+                    })}
                   </>
                 )}
               </span>

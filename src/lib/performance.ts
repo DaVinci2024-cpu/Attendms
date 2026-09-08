@@ -1,3 +1,4 @@
+import { companyDateKeyToUtc, companyFields, companyTimeToUtc } from "./companyTime";
 import { cellAssignments } from "./schedule";
 import { toWeekId } from "./week";
 import type { AttendanceLog, Employee, WeekSchedule } from "./types";
@@ -42,11 +43,11 @@ export function computeEmployeePerformance(
 ): EmployeePerformance[] {
   const scheduledByDate = new Map<string, Set<string>>();
   for (const schedule of schedules) {
-    const weekStart = new Date(`${schedule.weekId}T00:00:00`);
+    const weekStart = companyDateKeyToUtc(schedule.weekId);
+    const ws = companyFields(weekStart);
     schedule.rows.forEach((row, index) => {
       if (index > 6) return;
-      const date = new Date(weekStart);
-      date.setDate(date.getDate() + index);
+      const date = companyTimeToUtc(ws.year, ws.month, ws.day + index);
       const dateKey = toWeekId(date);
       for (const columnId of Object.keys(row.cells)) {
         for (const assignment of cellAssignments(row.cells, columnId)) {

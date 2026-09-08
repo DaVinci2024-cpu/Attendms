@@ -23,6 +23,7 @@ import {
 import { requestPosition } from "@/lib/geolocation";
 import { usePermissions } from "@/components/RequireAdmin";
 import { COMPANY_NAME } from "@/lib/constants";
+import { COMPANY_TIME_ZONE } from "@/lib/companyTime";
 import { PageHeader } from "@/components/PageHeader";
 
 export default function KioskSettingsPage() {
@@ -557,7 +558,7 @@ function LocationPolicyForm() {
           {savedInfo && !saved && (
             <p className="text-xs text-neutral-500">
               Last set by {savedInfo.updatedByName} on{" "}
-              {new Date(savedInfo.updatedAt).toLocaleString()}.
+              {new Date(savedInfo.updatedAt).toLocaleString(undefined, { timeZone: COMPANY_TIME_ZONE })}.
             </p>
           )}
           {latitude === null && !savedInfo && (

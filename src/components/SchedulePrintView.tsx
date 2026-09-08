@@ -1,19 +1,22 @@
 import { COMPANY_NAME } from "@/lib/constants";
+import { COMPANY_TIME_ZONE, companyDateKeyToUtc, companyFields, companyTimeToUtc } from "@/lib/companyTime";
 import { cellAssignments } from "@/lib/schedule";
 import type { WeekSchedule } from "@/lib/types";
 
 function weekRangeLabel(weekId: string): string {
-  const start = new Date(`${weekId}T00:00:00`);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 6);
+  const start = companyDateKeyToUtc(weekId);
+  const { year, month, day } = companyFields(start);
+  const end = companyTimeToUtc(year, month, day + 6);
   const startLabel = start.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
+    timeZone: COMPANY_TIME_ZONE,
   });
   const endLabel = end.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
     year: "numeric",
+    timeZone: COMPANY_TIME_ZONE,
   });
   return `${startLabel} – ${endLabel}`;
 }
@@ -38,7 +41,10 @@ export function SchedulePrintView({
           <p className="text-sm">Weekly Schedule — {weekRangeLabel(schedule.weekId)}</p>
           {subtitle && <p className="text-xs text-neutral-600">{subtitle}</p>}
         </div>
-        <p className="text-xs text-neutral-600">Printed {new Date().toLocaleString()}</p>
+        <p className="text-xs text-neutral-600">
+          Printed{" "}
+          {new Date().toLocaleString(undefined, { timeZone: COMPANY_TIME_ZONE })}
+        </p>
       </div>
 
       <table className="w-full border-collapse text-left text-sm">
@@ -85,12 +91,14 @@ export function SchedulePrintView({
       {schedule.createdAt && (
         <p className="mt-3 text-xs text-neutral-600">
           Created by {schedule.createdByName ?? "—"} on{" "}
-          {new Date(schedule.createdAt).toLocaleString()}
+          {new Date(schedule.createdAt).toLocaleString(undefined, { timeZone: COMPANY_TIME_ZONE })}
           {schedule.updatedAt !== schedule.createdAt && schedule.updatedByName && (
             <>
               {" "}
               · Last edited by {schedule.updatedByName} on{" "}
-              {new Date(schedule.updatedAt).toLocaleString()}
+              {new Date(schedule.updatedAt).toLocaleString(undefined, {
+                timeZone: COMPANY_TIME_ZONE,
+              })}
             </>
           )}
         </p>

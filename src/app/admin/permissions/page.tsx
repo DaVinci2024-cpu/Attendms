@@ -23,6 +23,7 @@ import {
   grantIsActive,
   scheduleExemptionIsActive,
 } from "@/lib/permissions";
+import { COMPANY_TIME_ZONE, companyDatetimeLocalToUtc } from "@/lib/companyTime";
 import type { Employee, Permission, PermissionGrant, ScheduleExemption } from "@/lib/types";
 
 export default function AdminPermissionsPage() {
@@ -156,7 +157,7 @@ function PersonRow({
         uid: employee.authUid,
         displayName: employee.fullName,
         permissions: Array.from(selected),
-        expiresAtMillis: expiry ? new Date(expiry).getTime() : null,
+        expiresAtMillis: expiry ? companyDatetimeLocalToUtc(expiry).getTime() : null,
         grantedBy: grantedByUid,
         grantedAt: new Date().toISOString(),
       };
@@ -200,7 +201,9 @@ function PersonRow({
                   grant.permissions.length === 1 ? "" : "s"
                 }${
                   grant.expiresAtMillis
-                    ? ` · expires ${new Date(grant.expiresAtMillis).toLocaleString()}`
+                    ? ` · expires ${new Date(grant.expiresAtMillis).toLocaleString(undefined, {
+                        timeZone: COMPANY_TIME_ZONE,
+                      })}`
                     : " · permanent"
                 }`
               : "No permissions granted"}
@@ -446,7 +449,7 @@ function ScheduleExemptionsCard({ grantedByUid }: { grantedByUid: string }) {
         employeeId: employee.employeeId,
         employeeName: employee.fullName,
         startsAtMillis: null,
-        expiresAtMillis: expiry ? new Date(expiry).getTime() : null,
+        expiresAtMillis: expiry ? companyDatetimeLocalToUtc(expiry).getTime() : null,
         grantedBy: grantedByUid,
         grantedAt: new Date().toISOString(),
       };
@@ -517,7 +520,10 @@ function ScheduleExemptionsCard({ grantedByUid }: { grantedByUid: string }) {
                         {!active
                           ? "Expired"
                           : exemption.expiresAtMillis
-                            ? `Expires ${new Date(exemption.expiresAtMillis).toLocaleString()}`
+                            ? `Expires ${new Date(exemption.expiresAtMillis).toLocaleString(
+                                undefined,
+                                { timeZone: COMPANY_TIME_ZONE }
+                              )}`
                             : "Permanent"}
                       </p>
                     </div>

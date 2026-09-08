@@ -19,6 +19,7 @@ import { fetchAllAttendance, fetchAllEmployees, fetchWeekSchedule } from "@/lib/
 import { pairSessions, formatDuration, groupSessionsByDay } from "@/lib/hours";
 import { isVoided, punchStatus } from "@/lib/attendanceStatus";
 import { localDate, localTime } from "@/lib/dateFormat";
+import { companyEndOfDay, companyFields, companyTimeToUtc } from "@/lib/companyTime";
 import { DEPARTMENT_PRESETS, LATE_PUNCH_IN_GRACE_MS } from "@/lib/constants";
 import { mondayOf, toWeekId } from "@/lib/week";
 import {
@@ -236,10 +237,9 @@ function Dashboard() {
         end: new Date(Math.max(...currentShiftWindows.map((w) => w.end.getTime()))),
       };
     }
-    const start = new Date(now);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(now);
-    end.setHours(23, 59, 59, 999);
+    const { year, month, day } = companyFields(now);
+    const start = companyTimeToUtc(year, month, day);
+    const end = companyEndOfDay(now);
     return { label: "Today", start, end };
   }, [currentShiftWindows, currentHeadcount, now]);
 
@@ -736,10 +736,7 @@ function EmployeeSummaryPopup({
         </p>
         <p className="mt-1 text-sm text-neutral-300">
           {next
-            ? `${next.dayLabel} · ${next.columnLabel}, ${next.start.toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}`
+            ? `${next.dayLabel} · ${next.columnLabel}, ${localTime(next.start.toISOString())}`
             : "Nothing scheduled this week."}
         </p>
       </div>

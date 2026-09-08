@@ -13,6 +13,7 @@ import {
 import { formatDuration, type DayRow } from "@/lib/hours";
 import { isVoided, punchStatus } from "@/lib/attendanceStatus";
 import { localTime, toDatetimeLocalValue } from "@/lib/dateFormat";
+import { COMPANY_TIME_ZONE, companyDatetimeLocalToUtc } from "@/lib/companyTime";
 import type { AttendanceLog, Employee, PunchType } from "@/lib/types";
 
 // A small menu behind one tap target (not several tiny icon buttons
@@ -272,7 +273,7 @@ export function EditAttendanceModal({
     setSaving(true);
     setError(null);
     try {
-      const newIso = new Date(newTime).toISOString();
+      const newIso = companyDatetimeLocalToUtc(newTime).toISOString();
       await editAttendanceLog(log, newIso, log.type, reason.trim(), editorUid, editorName);
       onSaved({
         ...log,
@@ -321,10 +322,11 @@ export function EditAttendanceModal({
             <p className="font-medium text-neutral-300">Edit history</p>
             {log.edits.map((edit, i) => (
               <p key={i}>
-                {new Date(edit.editedAt).toLocaleString()} — {edit.editedByName}: &quot;
+                {new Date(edit.editedAt).toLocaleString(undefined, { timeZone: COMPANY_TIME_ZONE })} —{" "}
+                {edit.editedByName}: &quot;
                 {edit.reason}&quot;
                 {edit.previousTimestamp
-                  ? ` (was ${new Date(edit.previousTimestamp).toLocaleString()})`
+                  ? ` (was ${new Date(edit.previousTimestamp).toLocaleString(undefined, { timeZone: COMPANY_TIME_ZONE })})`
                   : " (shift closed manually)"}
               </p>
             ))}
@@ -404,7 +406,7 @@ export function CloseShiftModal({
     setSaving(true);
     setError(null);
     try {
-      const newIso = new Date(newTime).toISOString();
+      const newIso = companyDatetimeLocalToUtc(newTime).toISOString();
       const log = await closeShift(
         employeeId,
         employeeName,
@@ -628,7 +630,7 @@ export function AddPunchModal({
     setSaving(true);
     setError(null);
     try {
-      const newIso = new Date(newTime).toISOString();
+      const newIso = companyDatetimeLocalToUtc(newTime).toISOString();
       const log = await createManualAttendanceLog(
         employee.employeeId,
         employee.fullName,

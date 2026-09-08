@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { fetchAllAttendance, fetchAllEmployees, fetchWeekSchedule } from "@/lib/firestoreRepo";
 import { averageScore, computeEmployeePerformance, type EmployeePerformance } from "@/lib/performance";
 import { weekIdsBack } from "@/lib/week";
+import { companyDateKeyToUtc } from "@/lib/companyTime";
 import type { Employee, WeekSchedule } from "@/lib/types";
 
 const PERIOD_OPTIONS = [
@@ -38,7 +39,7 @@ function PerformancePage() {
       setError(null);
       try {
         const weekIds = weekIdsBack(weeksBack);
-        const periodStart = new Date(`${weekIds[weekIds.length - 1]}T00:00:00`).getTime();
+        const periodStart = companyDateKeyToUtc(weekIds[weekIds.length - 1]).getTime();
 
         const [emps, schedulesRaw, attendance] = await Promise.all([
           fetchAllEmployees(),

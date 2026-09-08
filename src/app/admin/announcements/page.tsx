@@ -9,6 +9,7 @@ import {
   fetchAnnouncements,
   postAnnouncement,
 } from "@/lib/firestoreRepo";
+import { COMPANY_TIME_ZONE } from "@/lib/companyTime";
 import type { Announcement } from "@/lib/types";
 
 export default function AdminAnnouncementsPage() {
@@ -143,7 +144,8 @@ function AnnouncementsManager() {
               <div className="flex-1">
                 <p className="text-sm">{a.message}</p>
                 <p className="mt-1 text-xs text-neutral-500">
-                  {a.postedByName} · {new Date(a.postedAt).toLocaleString()}
+                  {a.postedByName} ·{" "}
+                  {new Date(a.postedAt).toLocaleString(undefined, { timeZone: COMPANY_TIME_ZONE })}
                 </p>
               </div>
               {canPost && (
