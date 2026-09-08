@@ -36,6 +36,25 @@ export function timeOnDate(date: Date, hhmm: string): Date {
   return companyTimeToUtc(year, month, day, h, m);
 }
 
+// A shift's start+end anchored onto `date`'s Kampala calendar day — end
+// rolls onto the NEXT calendar day whenever it isn't after start (an
+// overnight shift, e.g. "19:00"-"08:00"), so the window always runs
+// forward in time instead of coming out backwards/empty.
+export function shiftWindowOnDate(
+  date: Date,
+  startHHMM: string,
+  endHHMM: string
+): { start: Date; end: Date } {
+  const start = timeOnDate(date, startHHMM);
+  let end = timeOnDate(date, endHHMM);
+  if (end.getTime() <= start.getTime()) {
+    const { year, month, day } = companyFields(date);
+    const [h, m] = endHHMM.split(":").map(Number);
+    end = companyTimeToUtc(year, month, day + 1, h, m);
+  }
+  return { start, end };
+}
+
 export function todayRow(schedule: WeekSchedule | null, weekStart: Date, now: Date) {
   if (!schedule) return null;
   const index = dayIndexOf(weekStart, now);
@@ -55,8 +74,7 @@ function resolveColumnStatus(
       status: "unenforced",
     };
   }
-  const start = timeOnDate(now, col.startTime);
-  const end = timeOnDate(now, col.endTime);
+  const { start, end } = shiftWindowOnDate(now, col.startTime, col.endTime);
   let status: ShiftPunchInStatus;
   if (now.getTime() < start.getTime()) {
     status = "upcoming";
@@ -119,8 +137,7 @@ export function findCurrentSupervisor(
   for (const col of schedule.columns) {
     const supervisor = row.supervisors?.[col.columnId];
     if (!supervisor || !col.startTime || !col.endTime) continue;
-    const start = timeOnDate(now, col.startTime);
-    const end = timeOnDate(now, col.endTime);
+    const { start, end } = shiftWindowOnDate(now, col.startTime, col.endTime);
     if (now.getTime() >= start.getTime() && now.getTime() < end.getTime()) {
       return supervisor;
     }

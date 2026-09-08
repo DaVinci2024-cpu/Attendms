@@ -1,6 +1,6 @@
 import { companyDateKey, companyFields, companyTimeToUtc } from "./companyTime";
 import { cellAssignments } from "./schedule";
-import { todayRow, timeOnDate } from "./punchRules";
+import { todayRow, timeOnDate, shiftWindowOnDate } from "./punchRules";
 import type { AttendanceLog, ScheduleColumn, ScheduleRow, WeekSchedule } from "./types";
 
 export interface ShiftWindow {
@@ -18,29 +18,47 @@ function timedWindowsForRow(
   const windows: ShiftWindow[] = [];
   for (const col of columns) {
     if (!col.startTime || !col.endTime) continue;
-    windows.push({
-      column: col,
-      row,
-      start: timeOnDate(date, col.startTime),
-      end: timeOnDate(date, col.endTime),
-    });
+    const { start, end } = shiftWindowOnDate(date, col.startTime, col.endTime);
+    windows.push({ column: col, row, start, end });
   }
   return windows;
 }
 
 // Every timed shift running right now — there can be more than one with
 // overlapping columns. Empty if nothing's scheduled today, or nothing
-// timed is currently active.
+// timed is currently active. Also checks yesterday's row for an overnight
+// shift (e.g. 19:00-08:00) that started yesterday and hasn't ended yet —
+// `now`'s own calendar day would otherwise resolve to today's row only,
+// missing a shift still running into the early hours.
 export function activeShifts(
   schedule: WeekSchedule | null,
   weekStart: Date,
   now: Date
 ): ShiftWindow[] {
+  if (!schedule) return [];
+  const active: ShiftWindow[] = [];
+
   const row = todayRow(schedule, weekStart, now);
-  if (!row || !schedule) return [];
-  return timedWindowsForRow(row, schedule.columns, now).filter(
-    (w) => now.getTime() >= w.start.getTime() && now.getTime() < w.end.getTime()
-  );
+  if (row) {
+    active.push(
+      ...timedWindowsForRow(row, schedule.columns, now).filter(
+        (w) => now.getTime() >= w.start.getTime() && now.getTime() < w.end.getTime()
+      )
+    );
+  }
+
+  const nf = companyFields(now);
+  const yesterday = companyTimeToUtc(nf.year, nf.month, nf.day - 1);
+  const yesterdaysRow = todayRow(schedule, weekStart, yesterday);
+  if (yesterdaysRow) {
+    active.push(
+      ...timedWindowsForRow(yesterdaysRow, schedule.columns, yesterday).filter(
+        (w) => now.getTime() >= w.start.getTime() && now.getTime() < w.end.getTime()
+      )
+    );
+  }
+
+  return active;
 }
 
 // The single shift that most recently finished as of `now` — today's
@@ -212,8 +230,7 @@ export function summarizeDayByDepartment(
   if (!row || !schedule) return result;
   for (const col of schedule.columns) {
     if (!col.startTime || !col.endTime) continue;
-    const start = timeOnDate(now, col.startTime);
-    const end = timeOnDate(now, col.endTime);
+    const { start, end } = shiftWindowOnDate(now, col.startTime, col.endTime);
     const isPresent = presentDuringWindow(logs, start, end);
     const byDept = new Map<
       string,
