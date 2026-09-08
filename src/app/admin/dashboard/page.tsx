@@ -20,7 +20,8 @@ import { pairSessions, formatDuration, groupSessionsByDay } from "@/lib/hours";
 import { isVoided, punchStatus } from "@/lib/attendanceStatus";
 import { localDate, localTime } from "@/lib/dateFormat";
 import { companyEndOfDay, companyFields, companyTimeToUtc } from "@/lib/companyTime";
-import { DEPARTMENT_PRESETS, LATE_PUNCH_IN_GRACE_MS } from "@/lib/constants";
+import { LATE_PUNCH_IN_GRACE_MS } from "@/lib/constants";
+import { departmentSortKey, UNASSIGNED_DEPARTMENT } from "@/lib/departments";
 import { mondayOf, toWeekId } from "@/lib/week";
 import {
   activeShifts,
@@ -32,16 +33,6 @@ import {
   summarizeShiftAttendance,
 } from "@/lib/shiftStats";
 import type { AttendanceLog, Employee, WeekSchedule } from "@/lib/types";
-
-// Known departments sort first (in this order), then anything custom
-// alphabetically, "Unassigned" always last — for the sector rotation
-// summary below.
-function departmentSortKey(department: string): string {
-  const presetIndex = (DEPARTMENT_PRESETS as readonly string[]).indexOf(department);
-  if (department === "Unassigned") return "zzz";
-  if (presetIndex >= 0) return `0${presetIndex}`;
-  return `1${department}`;
-}
 
 // A background refresh cadence for the dashboard's "right now" pills —
 // frequent enough that they don't visibly go stale while the page is
@@ -210,7 +201,7 @@ function Dashboard() {
   const departmentByEmployeeId = useMemo(() => {
     const map = new Map<string, string>();
     for (const e of employees) {
-      map.set(e.employeeId, e.department?.trim() || "Unassigned");
+      map.set(e.employeeId, e.department?.trim() || UNASSIGNED_DEPARTMENT);
     }
     return map;
   }, [employees]);

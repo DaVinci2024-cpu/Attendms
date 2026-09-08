@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   CalendarCheck,
   ChevronLeft,
   ChevronRight,
+  Copy,
   History,
   Loader2,
   MessageSquare,
@@ -32,7 +33,9 @@ import {
 } from "@/lib/firestoreRepo";
 import { cellAssignments, defaultColumns } from "@/lib/schedule";
 import { columnColor, type ColumnColor } from "@/lib/columnColors";
-import { mondayOf, toWeekId } from "@/lib/week";
+import { DEPARTMENT_PRESETS } from "@/lib/constants";
+import { sortDepartments, UNASSIGNED_DEPARTMENT } from "@/lib/departments";
+import { mondayOf, toWeekId, weeksInMonth } from "@/lib/week";
 import {
   COMPANY_TIME_ZONE,
   companyDateKeyToUtc,
@@ -43,11 +46,23 @@ import type {
   AvailabilityEntry,
   Employee,
   ScheduleAssignment,
+  ScheduleColumn,
   ScheduleColumnTemplate,
   ShiftNote,
   ShiftSupervisor,
   WeekSchedule,
 } from "@/lib/types";
+
+// Which department tab a column/row-cell belongs to — untagged columns
+// (from before departments existed, or deliberately left unassigned) group
+// under UNASSIGNED_DEPARTMENT, same convention as the dashboard.
+function columnDepartment(column: ScheduleColumn): string {
+  return column.department?.trim() || UNASSIGNED_DEPARTMENT;
+}
+
+function employeeDepartment(employee: Employee): string {
+  return employee.department?.trim() || UNASSIGNED_DEPARTMENT;
+}
 
 const DAY_NAMES = [
   "Monday",
@@ -98,10 +113,50 @@ function ScheduleGrid() {
   const [notes, setNotes] = useState<ShiftNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [copying, setCopying] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeDept, setActiveDept] = useState<string>(UNASSIGNED_DEPARTMENT);
 
   const weekId = toWeekId(weekStart);
+
+  // Tabs shown regardless of what's tagged this particular week, so a tab
+  // doesn't disappear just because this week has no columns in it yet.
+  const deptTabs = useMemo(() => {
+    const known = new Set<string>(DEPARTMENT_PRESETS);
+    for (const e of employees) {
+      if (e.department?.trim()) known.add(e.department.trim());
+    }
+    if (schedule) {
+      for (const c of schedule.columns) {
+        if (c.department?.trim()) known.add(c.department.trim());
+      }
+    }
+    known.add(UNASSIGNED_DEPARTMENT);
+    return sortDepartments(known);
+  }, [employees, schedule]);
+
+  // Falls back to the first tab whenever the stored activeDept isn't (or
+  // isn't yet) one of the current tabs — e.g. right after load, or if the
+  // employee/column data that produced a custom tab disappears — without
+  // needing an effect just to keep a derived value in sync.
+  const activeDeptResolved =
+    deptTabs.includes(activeDept) ? activeDept : deptTabs[0] ?? UNASSIGNED_DEPARTMENT;
+
+  const visibleColumns = useMemo(
+    () =>
+      schedule ? schedule.columns.filter((c) => columnDepartment(c) === activeDeptResolved) : [],
+    [schedule, activeDeptResolved]
+  );
+  const columnIndexById = useMemo(
+    () => new Map((schedule?.columns ?? []).map((c, i) => [c.columnId, i])),
+    [schedule]
+  );
+  const deptEmployees = useMemo(
+    () => employees.filter((e) => employeeDepartment(e) === activeDeptResolved),
+    [employees, activeDeptResolved]
+  );
+  const monthWeeks = useMemo(() => weeksInMonth(weekStart), [weekStart]);
 
   useEffect(() => {
     let cancelled = false;
@@ -330,7 +385,11 @@ function ScheduleGrid() {
             ...prev,
             columns: [
               ...prev.columns,
-              { columnId: `col_${crypto.randomUUID()}`, label: "New column" },
+              {
+                columnId: `col_${crypto.randomUUID()}`,
+                label: "New column",
+                department: activeDeptResolved === UNASSIGNED_DEPARTMENT ? undefined : activeDeptResolved,
+              },
             ],
           }
         : prev
@@ -398,12 +457,39 @@ function ScheduleGrid() {
     setDirty(true);
   }
 
-  function toggleScheduleRequirementWaived() {
-    setSchedule((prev) =>
-      prev
-        ? { ...prev, scheduleRequirementWaived: !prev.scheduleRequirementWaived }
-        : prev
-    );
+  // A week saved before per-department waiving existed may still carry the
+  // legacy whole-schedule scheduleRequirementWaived flag — treat that as
+  // "every department is waived" for display purposes without needing to
+  // migrate old documents.
+  function isWaivedForDepartment(week: WeekSchedule, dept: string): boolean {
+    if (week.scheduleRequirementWaived) return true;
+    return (week.scheduleRequirementWaivedDepartments ?? []).includes(dept);
+  }
+
+  function toggleScheduleRequirementWaived(dept: string) {
+    setSchedule((prev) => {
+      if (!prev) return prev;
+      if (isWaivedForDepartment(prev, dept)) {
+        // Turning off. If this week relied on the legacy "waive everyone"
+        // flag, convert it into an explicit per-department list minus this
+        // one, so every other department keeps behaving the same.
+        const nextDepartments = prev.scheduleRequirementWaived
+          ? deptTabs.filter((d) => d !== dept)
+          : (prev.scheduleRequirementWaivedDepartments ?? []).filter((d) => d !== dept);
+        return {
+          ...prev,
+          scheduleRequirementWaived: false,
+          scheduleRequirementWaivedDepartments: nextDepartments,
+        };
+      }
+      return {
+        ...prev,
+        scheduleRequirementWaivedDepartments: [
+          ...(prev.scheduleRequirementWaivedDepartments ?? []),
+          dept,
+        ],
+      };
+    });
     setDirty(true);
   }
 
@@ -438,17 +524,124 @@ function ScheduleGrid() {
     }
   }
 
+  function confirmDiscardIfDirty(): boolean {
+    return (
+      !dirty || window.confirm("You have unsaved changes. Discard them and switch weeks?")
+    );
+  }
+
   function goToWeek(offsetWeeks: number) {
-    if (
-      dirty &&
-      !window.confirm("You have unsaved changes. Discard them and switch weeks?")
-    ) {
-      return;
-    }
+    if (!confirmDiscardIfDirty()) return;
     setWeekStart((prev) => {
       const { year, month, day } = companyFields(prev);
       return mondayOf(companyTimeToUtc(year, month, day + offsetWeeks * 7));
     });
+  }
+
+  function goToMonday(monday: Date) {
+    if (!confirmDiscardIfDirty()) return;
+    setWeekStart(mondayOf(monday));
+  }
+
+  // Copies this week's active department's columns + assignments onto
+  // every other week in the current calendar month, replacing whatever
+  // that department already had there. Rows are paired by day-of-week
+  // index (both weeks are the standard 7-day Monday-first layout) — a week
+  // with manually added/removed/reordered rows can pair incorrectly; that
+  // limitation is accepted rather than solved here.
+  async function copyDepartmentToMonth() {
+    if (!schedule || !canEdit) return;
+    const sourceColumns = schedule.columns.filter((c) => columnDepartment(c) === activeDeptResolved);
+    if (sourceColumns.length === 0) {
+      window.alert(`No ${activeDeptResolved} columns this week to copy.`);
+      return;
+    }
+    const targets = monthWeeks.filter((m) => toWeekId(m) !== weekId);
+    if (targets.length === 0) return;
+    if (
+      !window.confirm(
+        `Copy this week's ${activeDeptResolved} schedule to the other ${targets.length} week${
+          targets.length === 1 ? "" : "s"
+        } in this month? This replaces any existing ${activeDeptResolved} columns and assignments in those weeks.`
+      )
+    ) {
+      return;
+    }
+
+    setCopying(true);
+    setError(null);
+    try {
+      for (const monday of targets) {
+        const targetWeekId = toWeekId(monday);
+        const existing = await fetchWeekSchedule(targetWeekId);
+        const base: WeekSchedule =
+          existing ?? {
+            weekId: targetWeekId,
+            columns: columnTemplate?.columns ?? defaultColumns(),
+            customColumns: false,
+            rows: defaultRows(monday),
+            updatedAt: new Date().toISOString(),
+          };
+
+        const idMap = new Map(
+          sourceColumns.map((c) => [c.columnId, `col_${crypto.randomUUID()}`])
+        );
+        const newColumns: ScheduleColumn[] = sourceColumns.map((c) => ({
+          ...c,
+          columnId: idMap.get(c.columnId)!,
+        }));
+        const keptColumns = base.columns.filter((c) => columnDepartment(c) !== activeDeptResolved);
+        const mergedColumns = [...keptColumns, ...newColumns];
+
+        const mergedRows = base.rows.map((targetRow, i) => {
+          const sourceRow = schedule.rows[i];
+          const nextCells: Record<string, ScheduleAssignment[]> = {};
+          const nextSupervisors: Record<string, ShiftSupervisor> = {};
+
+          for (const col of keptColumns) {
+            const assignments = cellAssignments(targetRow.cells, col.columnId);
+            if (assignments.length > 0) nextCells[col.columnId] = assignments;
+            const sup = targetRow.supervisors?.[col.columnId];
+            if (sup) nextSupervisors[col.columnId] = sup;
+          }
+          if (sourceRow) {
+            for (const srcCol of sourceColumns) {
+              const newColId = idMap.get(srcCol.columnId)!;
+              const assignments = cellAssignments(sourceRow.cells, srcCol.columnId);
+              if (assignments.length > 0) nextCells[newColId] = assignments;
+              const sup = sourceRow.supervisors?.[srcCol.columnId];
+              if (sup) nextSupervisors[newColId] = sup;
+            }
+          }
+
+          return {
+            ...targetRow,
+            cells: nextCells,
+            supervisors: Object.keys(nextSupervisors).length > 0 ? nextSupervisors : undefined,
+          };
+        });
+
+        const now = new Date().toISOString();
+        const payload: WeekSchedule = {
+          ...base,
+          weekId: targetWeekId,
+          columns: mergedColumns,
+          rows: mergedRows,
+          updatedAt: now,
+          updatedBy: uid,
+          updatedByName: editorName,
+          createdBy: base.createdAt ? base.createdBy : uid,
+          createdByName: base.createdAt ? base.createdByName : editorName,
+          createdAt: base.createdAt ?? now,
+        };
+        await saveWeekSchedule(payload);
+      }
+      window.alert(`Copied ${activeDeptResolved}'s schedule to ${targets.length} other week(s).`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to copy schedule to the month");
+    } finally {
+      setCopying(false);
+    }
   }
 
   return (
@@ -492,6 +685,34 @@ function ScheduleGrid() {
         </p>
       )}
 
+      {monthWeeks.length > 1 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {monthWeeks.map((monday) => {
+            const id = toWeekId(monday);
+            const isActive = id === weekId;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => goToMonday(monday)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  isActive
+                    ? "bg-pink-600 text-white"
+                    : "bg-neutral-900 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+                }`}
+              >
+                Week of{" "}
+                {monday.toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                  timeZone: COMPANY_TIME_ZONE,
+                })}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {error && <p className="text-sm text-red-400">{error}</p>}
 
       {loading ? (
@@ -533,10 +754,27 @@ function ScheduleGrid() {
             </div>
           )}
 
+          <div className="flex flex-wrap items-center gap-1 border-b border-neutral-800">
+            {deptTabs.map((dept) => (
+              <button
+                key={dept}
+                type="button"
+                onClick={() => setActiveDept(dept)}
+                className={`rounded-t-lg px-3 py-2 text-sm font-medium transition-colors ${
+                  dept === activeDeptResolved
+                    ? "bg-neutral-900 text-neutral-100"
+                    : "text-neutral-500 hover:text-neutral-300"
+                }`}
+              >
+                {dept}
+              </button>
+            ))}
+          </div>
+
           {canEdit && (
             <label
               className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs ${
-                schedule.scheduleRequirementWaived
+                isWaivedForDepartment(schedule, activeDeptResolved)
                   ? "bg-amber-950/40 text-amber-200"
                   : "bg-neutral-900 text-neutral-400"
               }`}
@@ -544,21 +782,28 @@ function ScheduleGrid() {
               <input
                 type="checkbox"
                 className="mt-0.5"
-                checked={schedule.scheduleRequirementWaived ?? false}
-                onChange={toggleScheduleRequirementWaived}
+                checked={isWaivedForDepartment(schedule, activeDeptResolved)}
+                onChange={() => toggleScheduleRequirementWaived(activeDeptResolved)}
               />
               <span>
-                <strong>Allow punch-in without a schedule, for everyone, this week.</strong>{" "}
-                Turns off the &quot;must be on today&apos;s schedule&quot; rule at the
-                kiosk entirely for {weekId} — no supervisor needed either. Doesn&apos;t
-                affect other weeks. For exempting specific employees permanently or
-                long-term instead, use{" "}
+                <strong>Allow punch-in without a schedule, for {activeDeptResolved}, this week.</strong>{" "}
+                Turns off the &quot;must be on today&apos;s schedule&quot; rule at the kiosk
+                for {activeDeptResolved} staff for {weekId} — no supervisor needed either. Doesn&apos;t
+                affect other departments or other weeks. For exempting specific employees
+                permanently or long-term instead, use{" "}
                 <Link href="/admin/permissions" className="underline hover:no-underline">
                   Roles &amp; permissions
                 </Link>
                 .
               </span>
             </label>
+          )}
+
+          {visibleColumns.length === 0 && (
+            <p className="rounded-lg bg-neutral-900 px-3 py-2 text-xs text-neutral-500">
+              No shift columns for {activeDeptResolved} yet.
+              {canEdit && ` Use "+ Column" below to add one.`}
+            </p>
           )}
 
           <div className="overflow-x-auto rounded-xl bg-neutral-900">
@@ -568,8 +813,8 @@ function ScheduleGrid() {
                   <th className="min-w-[160px] border-b border-neutral-800 px-3 py-2 text-neutral-400">
                     Day
                   </th>
-                  {schedule.columns.map((col, colIndex) => {
-                    const color = columnColor(colIndex);
+                  {visibleColumns.map((col) => {
+                    const color = columnColor(columnIndexById.get(col.columnId) ?? 0);
                     return (
                       <th
                         key={col.columnId}
@@ -666,13 +911,13 @@ function ScheduleGrid() {
                         row.label
                       )}
                     </td>
-                    {schedule.columns.map((col, colIndex) => (
+                    {visibleColumns.map((col) => (
                       <td key={col.columnId} className="px-3 py-2 align-top">
                         <CellAssignments
                           assignments={cellAssignments(row.cells, col.columnId)}
-                          employees={employees}
+                          employees={deptEmployees}
                           editable={canEdit}
-                          color={columnColor(colIndex)}
+                          color={columnColor(columnIndexById.get(col.columnId) ?? 0)}
                           onAdd={(employee) =>
                             addAssignment(row.rowId, col.columnId, employee)
                           }
@@ -723,6 +968,27 @@ function ScheduleGrid() {
                 )}
                 {dirty ? "Save changes" : "Saved"}
               </button>
+
+              {monthWeeks.length > 1 && (
+                <button
+                  type="button"
+                  onClick={copyDepartmentToMonth}
+                  disabled={copying || dirty || visibleColumns.length === 0}
+                  title={
+                    dirty
+                      ? "Save your changes first"
+                      : `Copy this week's ${activeDeptResolved} schedule to the rest of the month`
+                  }
+                  className="flex items-center gap-2 rounded-lg bg-neutral-800 px-4 py-2 text-sm font-medium text-neutral-200 hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {copying ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                  Copy {activeDeptResolved} to rest of month
+                </button>
+              )}
             </div>
           )}
 

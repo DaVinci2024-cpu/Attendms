@@ -168,6 +168,11 @@ export interface ScheduleColumn {
   label: string;
   startTime?: string;
   endTime?: string;
+  // Which department tab this shift belongs to (see /admin/schedule) —
+  // absent for a column created before departments existed, or one an
+  // admin deliberately left unassigned; it shows up under that page's
+  // "Unassigned" tab either way. Free text, same as Employee.department.
+  department?: string;
 }
 
 // employeeName is denormalized (copied in at assignment time) purely for
@@ -213,13 +218,21 @@ export interface WeekSchedule {
   // the standard template ("keep this week separate"). Absent/false means
   // this week always follows the template.
   customColumns?: boolean;
-  // Turns off the "must be on the schedule to punch in" rule for
-  // everyone, for this week only — the kiosk treats it exactly like a
-  // week with no schedule posted at all (see evaluateAndFinalize in
-  // src/app/page.tsx). Distinct from ScheduleExemption, which exempts one
-  // specific employee indefinitely/until an expiry regardless of which
-  // week it is; this is the opposite shape — everyone, one week.
+  // Legacy whole-schedule version of scheduleRequirementWaivedDepartments
+  // below — waives every department at once. Kept only so a week saved
+  // before per-department waiving existed still behaves the same; new
+  // saves always write the per-department list instead.
   scheduleRequirementWaived?: boolean;
+  // Turns off the "must be on the schedule to punch in" rule, for this
+  // week only, for just the listed departments (an employee with no
+  // department set is grouped under "Unassigned", same as the dashboard
+  // and schedule page) — the kiosk treats a punch-in from one of these
+  // departments exactly like a week with no schedule posted at all (see
+  // evaluateAndFinalize in src/app/page.tsx). Distinct from
+  // ScheduleExemption, which exempts one specific employee indefinitely/
+  // until an expiry regardless of which week it is; this is the opposite
+  // shape — a whole department, one week.
+  scheduleRequirementWaivedDepartments?: string[];
   rows: ScheduleRow[];
   updatedAt: string;
   updatedBy?: string; // uid of whoever last saved this week

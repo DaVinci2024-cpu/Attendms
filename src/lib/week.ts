@@ -20,3 +20,21 @@ export function weekIdsBack(weeksBack: number): string[] {
     companyDateKey(companyTimeToUtc(year, month, day - i * 7))
   );
 }
+
+// Every Monday whose week overlaps the Kampala calendar month containing
+// `anyDateInMonth` — a week counts if any of its 7 days falls in that
+// month, so the strip can include a trailing/leading week that's mostly
+// in the neighboring month. Used by the schedule page's month navigator.
+export function weeksInMonth(anyDateInMonth: Date): Date[] {
+  const { year, month } = companyFields(anyDateInMonth);
+  const firstOfMonth = companyTimeToUtc(year, month, 1);
+  const lastOfMonth = companyTimeToUtc(year, month + 1, 0);
+  const mondays: Date[] = [];
+  let cursor = mondayOf(firstOfMonth);
+  while (cursor <= lastOfMonth) {
+    mondays.push(cursor);
+    const { year: y, month: m, day: d } = companyFields(cursor);
+    cursor = companyTimeToUtc(y, m, d + 7);
+  }
+  return mondays;
+}

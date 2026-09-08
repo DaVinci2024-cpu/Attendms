@@ -44,6 +44,7 @@ import {
   type ResolvedShift,
 } from "@/lib/punchRules";
 import { scheduleExemptionIsActive } from "@/lib/permissions";
+import { UNASSIGNED_DEPARTMENT } from "@/lib/departments";
 import {
   getDeviceId,
   haversineDistanceMeters,
@@ -697,10 +698,16 @@ export default function Home() {
         return;
       }
 
-      // Admin has explicitly waived the schedule requirement for
-      // everyone, for this whole week (src/app/admin/schedule) — treat it
-      // exactly like the no-schedule-posted case above.
-      if (schedule.scheduleRequirementWaived) {
+      // Admin has explicitly waived the schedule requirement for this
+      // employee's department, for this week (src/app/admin/schedule) —
+      // treat it exactly like the no-schedule-posted case above. A
+      // whole-schedule waiver saved before per-department waiving existed
+      // (scheduleRequirementWaived) still waives every department.
+      const employeeDepartment = employee.department?.trim() || UNASSIGNED_DEPARTMENT;
+      if (
+        schedule.scheduleRequirementWaived ||
+        (schedule.scheduleRequirementWaivedDepartments ?? []).includes(employeeDepartment)
+      ) {
         finalizePunch(employee, punchType, null, null, true);
         return;
       }
