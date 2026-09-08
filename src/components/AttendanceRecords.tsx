@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Ban, Loader2, LogOut, MapPin, MoreVertical, Pencil, X } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
+import { useEnterTransition } from "@/hooks/useEnterTransition";
 import {
   closeShift,
   createManualAttendanceLog,
@@ -28,7 +29,27 @@ function PunchActionsMenu({
   onVoidClick: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const show = useEnterTransition(open);
+  const menuRef = useRef<HTMLDivElement>(null);
+  // Left-anchored by default (menu's left edge under the button's), then
+  // nudged back on-screen after measuring — a punch-in's button sits
+  // near the left of its row and a punch-out's nearer the right, so
+  // neither a fixed left-0 nor right-0 stays on-screen for both.
+  const [leftOffsetPx, setLeftOffsetPx] = useState(0);
   const editCount = log.edits?.length ?? 0;
+
+  useLayoutEffect(() => {
+    if (!open || !menuRef.current) return;
+    const rect = menuRef.current.getBoundingClientRect();
+    const margin = 8;
+    const overflowRight = rect.right - (window.innerWidth - margin);
+    const overflowLeft = margin - rect.left;
+    if (overflowRight > 0) {
+      setLeftOffsetPx((prev) => prev - overflowRight);
+    } else if (overflowLeft > 0) {
+      setLeftOffsetPx((prev) => prev + overflowLeft);
+    }
+  }, [open]);
 
   const details: string[] = [];
   if (editCount > 0) {
@@ -71,7 +92,13 @@ function PunchActionsMenu({
             onClick={() => setOpen(false)}
             className="fixed inset-0 z-40 cursor-default"
           />
-          <div className="absolute right-0 top-full z-50 mt-1 w-60 rounded-lg bg-neutral-800 p-1.5 shadow-xl">
+          <div
+            ref={menuRef}
+            style={{ left: leftOffsetPx }}
+            className={`absolute top-full z-50 mt-1 w-60 origin-top-left rounded-lg bg-neutral-800 p-1.5 shadow-xl transition-all duration-150 ease-out ${
+              show ? "scale-100 opacity-100" : "scale-95 opacity-0"
+            }`}
+          >
             {details.length > 0 && (
               <>
                 <div className="flex flex-col gap-1 px-2.5 py-1.5 text-xs text-neutral-400">
@@ -235,6 +262,7 @@ export function EditAttendanceModal({
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const show = useEnterTransition();
 
   async function handleSave() {
     if (!reason.trim()) {
@@ -269,8 +297,16 @@ export function EditAttendanceModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-      <div className="flex w-full max-w-sm flex-col gap-4 rounded-xl bg-neutral-900 p-6">
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 transition-opacity duration-200 ease-out ${
+        show ? "opacity-100" : "opacity-0"
+      }`}
+    >
+      <div
+        className={`flex w-full max-w-sm flex-col gap-4 rounded-xl bg-neutral-900 p-6 transition-all duration-200 ease-out ${
+          show ? "scale-100 opacity-100" : "scale-95 opacity-0"
+        }`}
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">
             Edit {log.employeeName}&apos;s {log.type === "punch_in" ? "punch in" : "punch out"}
@@ -358,6 +394,7 @@ export function CloseShiftModal({
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const show = useEnterTransition();
 
   async function handleSave() {
     if (!reason.trim()) {
@@ -385,8 +422,16 @@ export function CloseShiftModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-      <div className="flex w-full max-w-sm flex-col gap-4 rounded-xl bg-neutral-900 p-6">
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 transition-opacity duration-200 ease-out ${
+        show ? "opacity-100" : "opacity-0"
+      }`}
+    >
+      <div
+        className={`flex w-full max-w-sm flex-col gap-4 rounded-xl bg-neutral-900 p-6 transition-all duration-200 ease-out ${
+          show ? "scale-100 opacity-100" : "scale-95 opacity-0"
+        }`}
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Close {employeeName}&apos;s shift</h2>
           <button type="button" onClick={onClose} className="text-neutral-400 hover:text-neutral-200">
@@ -457,6 +502,7 @@ export function VoidModal({
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const show = useEnterTransition();
 
   async function handleVoid() {
     if (!reason.trim()) {
@@ -490,8 +536,16 @@ export function VoidModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-      <div className="flex w-full max-w-sm flex-col gap-4 rounded-xl bg-neutral-900 p-6">
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 transition-opacity duration-200 ease-out ${
+        show ? "opacity-100" : "opacity-0"
+      }`}
+    >
+      <div
+        className={`flex w-full max-w-sm flex-col gap-4 rounded-xl bg-neutral-900 p-6 transition-all duration-200 ease-out ${
+          show ? "scale-100 opacity-100" : "scale-95 opacity-0"
+        }`}
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">
             Void {log.employeeName}&apos;s {log.type === "punch_in" ? "punch in" : "punch out"}
@@ -559,6 +613,7 @@ export function AddPunchModal({
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const show = useEnterTransition();
 
   async function handleSave() {
     const employee = employees.find((e) => e.employeeId === employeeId);
@@ -592,8 +647,16 @@ export function AddPunchModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-      <div className="flex w-full max-w-sm flex-col gap-4 rounded-xl bg-neutral-900 p-6">
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 transition-opacity duration-200 ease-out ${
+        show ? "opacity-100" : "opacity-0"
+      }`}
+    >
+      <div
+        className={`flex w-full max-w-sm flex-col gap-4 rounded-xl bg-neutral-900 p-6 transition-all duration-200 ease-out ${
+          show ? "scale-100 opacity-100" : "scale-95 opacity-0"
+        }`}
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Add a forgotten punch</h2>
           <button type="button" onClick={onClose} className="text-neutral-400 hover:text-neutral-200">
