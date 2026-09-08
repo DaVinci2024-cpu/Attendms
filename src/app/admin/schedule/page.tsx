@@ -469,6 +469,16 @@ function ScheduleGrid() {
     setDirty(true);
   }
 
+  // The reverse of useStandardColumns: keeps this week's own columns
+  // exactly as they are, but promotes them to become the shared standard
+  // template on the next Save (instead of pulling in whatever the
+  // template currently holds) — for turning a one-off week's setup into
+  // the default every other week follows from now on.
+  function makeColumnsStandard() {
+    setSchedule((prev) => (prev ? { ...prev, customColumns: false } : prev));
+    setDirty(true);
+  }
+
   // A week saved before per-department waiving existed may still carry the
   // legacy whole-schedule scheduleRequirementWaived flag — treat that as
   // "every department is waived" for display purposes without needing to
@@ -741,7 +751,8 @@ function ScheduleGrid() {
               {schedule.customColumns ? (
                 <>
                   <span>
-                    This week has its own columns, separate from the standard schedule.
+                    This week has its own columns, separate from the standard schedule —
+                    other weeks won&apos;t pick up changes made here.
                   </span>
                   <button
                     type="button"
@@ -749,6 +760,14 @@ function ScheduleGrid() {
                     className="text-blue-400 underline hover:text-blue-300"
                   >
                     Use standard columns
+                  </button>
+                  <span>·</span>
+                  <button
+                    type="button"
+                    onClick={makeColumnsStandard}
+                    className="text-blue-400 underline hover:text-blue-300"
+                  >
+                    Make these the standard
                   </button>
                 </>
               ) : (

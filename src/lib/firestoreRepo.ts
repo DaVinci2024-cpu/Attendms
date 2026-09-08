@@ -35,6 +35,26 @@ import type {
   ScheduleExemption,
 } from "./types";
 
+// setDoc rejects an explicit `undefined` field value anywhere in the
+// object tree (this project's Firestore client isn't configured with
+// ignoreUndefinedProperties), so schedule documents — which carry a lot of
+// optional, nested fields (column times, per-cell supervisors, per-week
+// waivers) — are sanitized right before the write instead of relying on
+// every caller to remember never to assign `undefined`.
+function stripUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefinedDeep(item)) as unknown as T;
+  }
+  if (value !== null && typeof value === "object" && !(value instanceof Date)) {
+    const out: Record<string, unknown> = {};
+    for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v !== undefined) out[key] = stripUndefinedDeep(v);
+    }
+    return out as T;
+  }
+  return value;
+}
+
 function companyDoc() {
   return doc(getDb(), "companies", COMPANY_ID);
 }
@@ -275,7 +295,7 @@ export async function fetchWeekSchedule(
 }
 
 export async function saveWeekSchedule(schedule: WeekSchedule): Promise<void> {
-  await setDoc(scheduleDoc(schedule.weekId), schedule);
+  await setDoc(scheduleDoc(schedule.weekId), stripUndefinedDeep(schedule));
 }
 
 // The standard column set shared by every week that hasn't been split off
@@ -288,7 +308,7 @@ export async function fetchScheduleColumnTemplate(): Promise<ScheduleColumnTempl
 export async function saveScheduleColumnTemplate(
   template: ScheduleColumnTemplate
 ): Promise<void> {
-  await setDoc(scheduleColumnsDoc(), template);
+  await setDoc(scheduleColumnsDoc(), stripUndefinedDeep(template));
 }
 
 export async function fetchKioskDisplaySettings(): Promise<KioskDisplaySettings | null> {
