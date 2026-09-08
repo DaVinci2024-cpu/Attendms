@@ -571,6 +571,12 @@ function ScheduleGrid() {
   // index (both weeks are the standard 7-day Monday-first layout) — a week
   // with manually added/removed/reordered rows can pair incorrectly; that
   // limitation is accepted rather than solved here.
+  //
+  // Every target is written with customColumns: true. Without that, a
+  // target week that isn't already "kept separate" would still resolve its
+  // displayed columns from the shared template on next load (see
+  // loadSchedule above) and silently discard the columns just written here
+  // — the copy would "succeed" but the week would still look empty.
   async function copyDepartmentToMonth() {
     if (!schedule || !canEdit) return;
     const sourceColumns = schedule.columns.filter((c) => columnDepartment(c) === activeDeptResolved);
@@ -584,7 +590,7 @@ function ScheduleGrid() {
       !window.confirm(
         `Copy this week's ${activeDeptResolved} schedule to the other ${targets.length} week${
           targets.length === 1 ? "" : "s"
-        } in this month? This replaces any existing ${activeDeptResolved} columns and assignments in those weeks.`
+        } in this month? This replaces any existing ${activeDeptResolved} columns and assignments in those weeks, and keeps each of those weeks on its own columns from then on (so they won't automatically follow later changes to the standard schedule).`
       )
     ) {
       return;
@@ -651,6 +657,7 @@ function ScheduleGrid() {
           ...base,
           weekId: targetWeekId,
           columns: mergedColumns,
+          customColumns: true,
           rows: mergedRows,
           updatedAt: now,
           updatedBy: uid,
