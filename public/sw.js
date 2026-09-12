@@ -4,10 +4,24 @@
 // this is the other half: can the page itself even open.
 //
 // Bump this on every deploy that should invalidate old cached pages/assets.
-const CACHE_NAME = "attendms-shell-v3";
+const CACHE_NAME = "attendms-shell-v4";
 
-self.addEventListener("install", () => {
-  self.skipWaiting();
+// Precached at install time — not left to happen opportunistically the
+// first time someone visits "/" — so the kiosk shell is guaranteed to be
+// answerable offline the moment this service worker has installed once,
+// rather than depending on exactly which page a past visit happened to
+// load. Without this, a request the runtime cache below never happened to
+// see falls through to the browser's own "you're offline" page instead of
+// this app, which is indistinguishable from the app itself being broken.
+const PRECACHE_URLS = ["/"];
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches
+      .open(CACHE_NAME)
+      .then((cache) => cache.addAll(PRECACHE_URLS))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate", (event) => {
@@ -61,7 +75,11 @@ self.addEventListener("fetch", (event) => {
         .catch(
           async () =>
             (await caches.match(event.request)) ||
-            (await caches.match("/")) ||
+            // ignoreSearch so a shortcut/bookmark that adds a query string
+            // (e.g. a desktop "install" shortcut) still finds the precached
+            // root instead of falling through to the browser's own offline
+            // page.
+            (await caches.match("/", { ignoreSearch: true })) ||
             Response.error()
         )
     );

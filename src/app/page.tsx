@@ -251,10 +251,14 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadInitialData() {
-      // Fetched separately (not Promise.all'd) so a failure in one
-      // non-critical read can never mask, or be masked by, another —
-      // and so the error banner names which one actually failed.
+    // Each fetch runs independently (not chained one after another) so a
+    // single slow/stuck one — e.g. a collection query with no cached
+    // result yet, genuinely offline on a first-ever load — can never
+    // delay the others. That matters most for locationPolicy below: its
+    // whole point is to give up and fall back to "no enforcement" rather
+    // than leave the kiosk stuck on the loading gate forever, and that
+    // promise only holds if nothing else can block it from even starting.
+    async function loadEmployees() {
       try {
         const emps = await fetchAllEmployees();
         if (cancelled) return;
@@ -268,7 +272,9 @@ export default function Home() {
           );
         }
       }
+    }
 
+    async function loadDisplaySettings() {
       try {
         const display = await fetchKioskDisplaySettings();
         if (cancelled) return;
@@ -278,7 +284,9 @@ export default function Home() {
         if (cancelled || !navigator.onLine) return;
         console.error("Failed to load kiosk display settings:", err);
       }
+    }
 
+    async function loadAuthPolicy() {
       try {
         const policy = await fetchAuthPolicy();
         if (cancelled) return;
@@ -287,7 +295,9 @@ export default function Home() {
         if (cancelled || !navigator.onLine) return;
         console.error("Failed to load auth policy:", err);
       }
+    }
 
+    async function loadSchedule() {
       try {
         const weekSchedule = await fetchWeekSchedule(toWeekId(mondayOf(new Date())));
         if (cancelled) return;
@@ -296,7 +306,9 @@ export default function Home() {
         if (cancelled || !navigator.onLine) return;
         console.error("Failed to load schedule:", err);
       }
+    }
 
+    async function loadExemptions() {
       try {
         const exemptions = await fetchAllScheduleExemptions();
         if (cancelled) return;
@@ -309,9 +321,18 @@ export default function Home() {
         if (cancelled || !navigator.onLine) return;
         console.error("Failed to load schedule exemptions:", err);
       }
+    }
 
+    async function loadLocationPolicy() {
       try {
-        const policy = await fetchLocationPolicy();
+        // Raced against a hard timeout — this is the one fetch the whole
+        // kiosk render is gated on (see the `locationPolicy === undefined`
+        // check below), so it can never be allowed to just hang if
+        // Firestore's own offline rejection is ever slower than expected.
+        const policy = await Promise.race([
+          fetchLocationPolicy(),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+        ]);
         if (cancelled) return;
         setLocationPolicy(policy);
       } catch (err) {
@@ -325,7 +346,12 @@ export default function Home() {
       }
     }
 
-    loadInitialData();
+    loadEmployees();
+    loadDisplaySettings();
+    loadAuthPolicy();
+    loadSchedule();
+    loadExemptions();
+    loadLocationPolicy();
 
     const handleOnline = () => {
       setOnline(true);
