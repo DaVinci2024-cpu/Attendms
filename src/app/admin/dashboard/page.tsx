@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Clock3, LogOut, Loader2, Plus, Users } from "lucide-react";
 import { usePermissions } from "@/components/RequireAdmin";
@@ -76,11 +76,23 @@ function Dashboard() {
   // open, without needing a reload.
   const [now, setNow] = useState(() => new Date());
 
+  // Bumped by every local write (close-shift, add-punch, edit, void) and by
+  // every background fetch this effect/interval kicks off. A fetch only
+  // applies its result if this is still the version it started with — on a
+  // slow connection (e.g. a flaky hospital link), the periodic refresh below
+  // can take 10+ seconds to resolve, long enough for an admin to close a
+  // shift in between; without this guard, that in-flight fetch's
+  // stale-by-definition snapshot (taken before the close) would land after
+  // the close and silently revert it, making a close that genuinely
+  // succeeded look like it did nothing.
+  const dataVersion = useRef(0);
+
   useEffect(() => {
     let cancelled = false;
+    const myVersion = ++dataVersion.current;
     Promise.all([fetchAllEmployees(), fetchAllAttendance()])
       .then(([emps, attendance]) => {
-        if (cancelled) return;
+        if (cancelled || dataVersion.current !== myVersion) return;
         setEmployees(emps);
         setLogs(attendance);
       })
@@ -111,8 +123,10 @@ function Dashboard() {
   useEffect(() => {
     const interval = setInterval(() => {
       setNow(new Date());
+      const myVersion = ++dataVersion.current;
       Promise.all([fetchAllEmployees(), fetchAllAttendance()])
         .then(([emps, attendance]) => {
+          if (dataVersion.current !== myVersion) return;
           setEmployees(emps);
           setLogs(attendance);
         })
@@ -128,17 +142,20 @@ function Dashboard() {
   }, []);
 
   function handleLogUpdated(updated: AttendanceLog) {
+    dataVersion.current++;
     setLogs((prev) => prev.map((l) => (l.logId === updated.logId ? updated : l)));
     setEditingLog(null);
     setVoidingLog(null);
   }
 
   function handleShiftsBulkClosed(newLogs: AttendanceLog[]) {
+    dataVersion.current++;
     setLogs((prev) => [...prev, ...newLogs]);
     setBulkClosing(false);
   }
 
   function handlePunchAdded(newLog: AttendanceLog) {
+    dataVersion.current++;
     setLogs((prev) => [...prev, newLog]);
     setAddingPunch(false);
   }
@@ -538,6 +555,7 @@ function Dashboard() {
           editorName={displayName}
           onClose={() => setClosingShiftFor(null)}
           onSaved={(logs) => {
+            dataVersion.current++;
             setLogs((prev) => [...prev, ...logs]);
             setClosingShiftFor(null);
           }}
