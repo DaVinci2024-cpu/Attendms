@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { StatPill } from "@/components/StatPill";
 import {
   AddPunchModal,
-  CloseShiftModal,
+  BulkCloseShiftModal,
   DayRowCard,
   EditAttendanceModal,
   VoidModal,
@@ -77,11 +77,6 @@ function History() {
     setVoidingLog(null);
   }
 
-  function handleShiftClosed(newLog: AttendanceLog) {
-    setLogs((prev) => [...prev, newLog]);
-    setClosingShiftFor(null);
-  }
-
   function handlePunchAdded(newLog: AttendanceLog) {
     setLogs((prev) => [...prev, newLog]);
     setAddingPunch(false);
@@ -89,6 +84,20 @@ function History() {
 
   const activeLogs = useMemo(() => logs.filter((l) => !isVoided(l)), [logs]);
   const allSessions = useMemo(() => pairSessions(activeLogs), [activeLogs]);
+
+  // Keyed off every open session regardless of the date/employee filters
+  // below — closing a shift needs to resolve all of that employee's real
+  // open punches, not just whichever happen to be in the filtered view.
+  const openSessionsByEmployee = useMemo(() => {
+    const map = new Map<string, typeof allSessions>();
+    for (const s of allSessions) {
+      if (s.punchOut !== null) continue;
+      const list = map.get(s.employeeId) ?? [];
+      list.push(s);
+      map.set(s.employeeId, list);
+    }
+    return map;
+  }, [allSessions]);
 
   const filteredSessions = useMemo(() => {
     return allSessions.filter((s) => {
@@ -261,13 +270,19 @@ function History() {
       )}
 
       {closingShiftFor && (
-        <CloseShiftModal
-          employeeId={closingShiftFor.employeeId}
-          employeeName={closingShiftFor.employeeName}
+        <BulkCloseShiftModal
+          employees={(openSessionsByEmployee.get(closingShiftFor.employeeId) ?? []).map((s) => ({
+            employeeId: s.employeeId,
+            employeeName: s.employeeName,
+            punchInTimestamp: s.punchIn.timestamp,
+          }))}
           editorUid={uid}
           editorName={displayName}
           onClose={() => setClosingShiftFor(null)}
-          onSaved={handleShiftClosed}
+          onSaved={(logs) => {
+            setLogs((prev) => [...prev, ...logs]);
+            setClosingShiftFor(null);
+          }}
         />
       )}
 

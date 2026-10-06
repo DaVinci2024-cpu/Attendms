@@ -389,122 +389,13 @@ export function EditAttendanceModal({
   );
 }
 
-export function CloseShiftModal({
-  employeeId,
-  employeeName,
-  editorUid,
-  editorName,
-  onClose,
-  onSaved,
-}: {
-  employeeId: string;
-  employeeName: string;
-  editorUid: string;
-  editorName: string;
-  onClose: () => void;
-  onSaved: (log: AttendanceLog) => void;
-}) {
-  const [newTime, setNewTime] = useState(() => toDatetimeLocalValue(new Date().toISOString()));
-  const [reason, setReason] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const show = useEnterTransition();
-
-  async function handleSave() {
-    if (!reason.trim()) {
-      setError("A reason is required.");
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      const newIso = companyDatetimeLocalToUtc(newTime).toISOString();
-      const log = await closeShift(
-        employeeId,
-        employeeName,
-        newIso,
-        reason.trim(),
-        editorUid,
-        editorName
-      );
-      onSaved(log);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to close shift");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div
-      className={`fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 transition-opacity duration-200 ease-out ${
-        show ? "opacity-100" : "opacity-0"
-      }`}
-    >
-      <div
-        className={`flex w-full max-w-sm flex-col gap-4 rounded-xl bg-neutral-900 p-6 transition-all duration-200 ease-out ${
-          show ? "scale-100 opacity-100" : "scale-95 opacity-0"
-        }`}
-      >
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Close {employeeName}&apos;s shift</h2>
-          <button type="button" onClick={onClose} className="text-neutral-400 hover:text-neutral-200">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        <p className="text-sm text-neutral-400">
-          Records a punch-out for a shift the employee forgot to end.
-        </p>
-
-        <label className="flex flex-col gap-1 text-sm">
-          Punch-out time
-          <input
-            type="datetime-local"
-            className="rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-600"
-            value={newTime}
-            onChange={(e) => setNewTime(e.target.value)}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Reason (required)
-          <textarea
-            className="min-h-20 rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-600"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="e.g. Employee forgot to punch out, confirmed they left around 5pm"
-          />
-        </label>
-
-        {error && <p className="text-sm text-red-400">{error}</p>}
-
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 rounded-lg bg-neutral-800 px-4 py-2 text-sm text-neutral-300 hover:bg-neutral-700"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-neutral-700"
-          >
-            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-            Close shift
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // Same idea as CloseShiftModal, but for a whole batch at once — e.g. a
 // handful of people left over from an earlier shift who all forgot to
-// punch out. One punch-out time and one reason applies to everyone
-// listed; each still gets its own real AttendanceLog (and its own audit
-// entry), just created together instead of one modal per person.
+// punch out, or one person with more than one open punch-in stacked up.
+// One punch-out time and one reason applies to the UI, but only the
+// admin's chosen time is actually used for each employee's most recent
+// open punch-in — see handleSave for why any older one underneath it
+// can't just reuse that same time.
 export function BulkCloseShiftModal({
   employees,
   editorUid,
@@ -512,7 +403,7 @@ export function BulkCloseShiftModal({
   onClose,
   onSaved,
 }: {
-  employees: { employeeId: string; employeeName: string }[];
+  employees: { employeeId: string; employeeName: string; punchInTimestamp: string }[];
   editorUid: string;
   editorName: string;
   onClose: () => void;
@@ -524,6 +415,21 @@ export function BulkCloseShiftModal({
   const [error, setError] = useState<string | null>(null);
   const show = useEnterTransition();
 
+  // `employees` can list the same person more than once — e.g. they have
+  // two separate open punches (a forgotten one sitting underneath a real
+  // one) and closing just the most recent doesn't actually resolve them.
+  // Rolled up here so the roster shows each name once with a count,
+  // rather than literally repeating it (and colliding on key).
+  const nameCounts = new Map<string, number>();
+  for (const e of employees) {
+    nameCounts.set(e.employeeName, (nameCounts.get(e.employeeName) ?? 0) + 1);
+  }
+  const uniqueNames = Array.from(nameCounts.keys());
+  const title =
+    uniqueNames.length === 1
+      ? `Close ${uniqueNames[0]}'s shift${employees.length > 1 ? "s" : ""}`
+      : `Close ${employees.length} shift${employees.length === 1 ? "" : "s"}`;
+
   async function handleSave() {
     if (!reason.trim()) {
       setError("A reason is required.");
@@ -532,10 +438,42 @@ export function BulkCloseShiftModal({
     setSaving(true);
     setError(null);
     try {
-      const newIso = companyDatetimeLocalToUtc(newTime).toISOString();
+      const chosenIso = companyDatetimeLocalToUtc(newTime).toISOString();
+
+      // pairSessions (src/lib/hours.ts) only ever resolves whichever
+      // punch-in is currently "pending" at the moment a punch-out arrives
+      // — a second punch-in before any punch-out immediately marks the
+      // first one open for good in that same pass. So stacking several
+      // new punch-outs all at the admin's chosen (later) time would still
+      // leave every open punch-in except the newest stuck, no matter how
+      // many get created. Each employee's open punches are sorted oldest
+      // first here; every one except the last (most recent, which gets
+      // the admin's actual chosen time) is auto-closed a minute after its
+      // own start instead, so it lands strictly before the next one and
+      // actually pairs up.
+      const byEmployee = new Map<string, typeof employees>();
+      for (const e of employees) {
+        const list = byEmployee.get(e.employeeId) ?? [];
+        list.push(e);
+        byEmployee.set(e.employeeId, list);
+      }
+      const closes: { employeeId: string; employeeName: string; iso: string }[] = [];
+      for (const list of byEmployee.values()) {
+        const sorted = [...list].sort((a, b) =>
+          a.punchInTimestamp.localeCompare(b.punchInTimestamp)
+        );
+        sorted.forEach((e, i) => {
+          const isMostRecent = i === sorted.length - 1;
+          const iso = isMostRecent
+            ? chosenIso
+            : new Date(new Date(e.punchInTimestamp).getTime() + 60000).toISOString();
+          closes.push({ employeeId: e.employeeId, employeeName: e.employeeName, iso });
+        });
+      }
+
       const logs = await Promise.all(
-        employees.map((e) =>
-          closeShift(e.employeeId, e.employeeName, newIso, reason.trim(), editorUid, editorName)
+        closes.map((c) =>
+          closeShift(c.employeeId, c.employeeName, c.iso, reason.trim(), editorUid, editorName)
         )
       );
       onSaved(logs);
@@ -558,20 +496,22 @@ export function BulkCloseShiftModal({
         }`}
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">
-            Close {employees.length} shift{employees.length === 1 ? "" : "s"}
-          </h2>
+          <h2 className="text-lg font-semibold">{title}</h2>
           <button type="button" onClick={onClose} className="text-neutral-400 hover:text-neutral-200">
             <X className="h-5 w-5" />
           </button>
         </div>
         <p className="text-sm text-neutral-400">
-          Records the same punch-out time for everyone below — for staff left over from
-          an earlier shift who forgot to clock out.
+          {uniqueNames.length === 1 && employees.length > 1
+            ? `${uniqueNames[0]} has ${employees.length} separate open punches — this closes all of them with the same time and reason.`
+            : "Records the same punch-out time for everyone below — for staff left over from an earlier shift who forgot to clock out."}
         </p>
         <ul className="flex max-h-32 flex-col gap-0.5 overflow-y-auto text-sm text-neutral-300">
-          {employees.map((e) => (
-            <li key={e.employeeId}>{e.employeeName}</li>
+          {Array.from(nameCounts.entries()).map(([name, count]) => (
+            <li key={name}>
+              {name}
+              {count > 1 && <span className="text-neutral-500"> ({count} open punches)</span>}
+            </li>
           ))}
         </ul>
 
@@ -587,14 +527,16 @@ export function BulkCloseShiftModal({
         <label className="flex flex-col gap-1 text-sm">
           Reason (required)
           <textarea
-            className="min-h-20 rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-600"
+            className={`min-h-20 rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 ${
+              error ? "ring-2 ring-red-500" : "focus:ring-blue-600"
+            }`}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="e.g. Morning shift, confirmed everyone left by 3pm"
           />
         </label>
 
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        {error && <p className="text-sm font-medium text-red-400">{error}</p>}
 
         <div className="flex gap-2">
           <button
@@ -611,7 +553,7 @@ export function BulkCloseShiftModal({
             className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-neutral-700"
           >
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-            Close {employees.length} shift{employees.length === 1 ? "" : "s"}
+            {title}
           </button>
         </div>
       </div>

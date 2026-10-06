@@ -11,7 +11,6 @@ import { DetailSheet } from "@/components/DetailSheet";
 import {
   AddPunchModal,
   BulkCloseShiftModal,
-  CloseShiftModal,
   DayRowCard,
   EditAttendanceModal,
   VoidModal,
@@ -134,11 +133,6 @@ function Dashboard() {
     setVoidingLog(null);
   }
 
-  function handleShiftClosed(newLog: AttendanceLog) {
-    setLogs((prev) => [...prev, newLog]);
-    setClosingShiftFor(null);
-  }
-
   function handleShiftsBulkClosed(newLogs: AttendanceLog[]) {
     setLogs((prev) => [...prev, ...newLogs]);
     setBulkClosing(false);
@@ -166,6 +160,23 @@ function Dashboard() {
     () => new Set(currentlyIn.map((s) => s.employeeId)),
     [currentlyIn]
   );
+
+  // Almost always a single entry, but an employee can end up with more
+  // than one open punch at once — e.g. a forgotten one sitting underneath
+  // a real one, usually from a manually-added punch. Keyed by employee so
+  // the per-row "Close" button can resolve ALL of that employee's open
+  // punches at once, not just the one the admin happened to click —
+  // BulkCloseShiftModal needs each one's real punch-in time to actually
+  // close them all correctly (see its own comment for why).
+  const openSessionsByEmployee = useMemo(() => {
+    const map = new Map<string, WorkSession[]>();
+    for (const s of currentlyIn) {
+      const list = map.get(s.employeeId) ?? [];
+      list.push(s);
+      map.set(s.employeeId, list);
+    }
+    return map;
+  }, [currentlyIn]);
 
   // The dashboard is a "right now" glance, not a historical browser — see
   // /admin/history for that. Today's sessions only, grouped the same way
@@ -517,13 +528,19 @@ function Dashboard() {
       )}
 
       {closingShiftFor && (
-        <CloseShiftModal
-          employeeId={closingShiftFor.employeeId}
-          employeeName={closingShiftFor.employeeName}
+        <BulkCloseShiftModal
+          employees={(openSessionsByEmployee.get(closingShiftFor.employeeId) ?? []).map((s) => ({
+            employeeId: s.employeeId,
+            employeeName: s.employeeName,
+            punchInTimestamp: s.punchIn.timestamp,
+          }))}
           editorUid={uid}
           editorName={displayName}
           onClose={() => setClosingShiftFor(null)}
-          onSaved={handleShiftClosed}
+          onSaved={(logs) => {
+            setLogs((prev) => [...prev, ...logs]);
+            setClosingShiftFor(null);
+          }}
         />
       )}
 
@@ -532,6 +549,7 @@ function Dashboard() {
           employees={earlierShiftIn.map((s) => ({
             employeeId: s.employeeId,
             employeeName: s.employeeName,
+            punchInTimestamp: s.punchIn.timestamp,
           }))}
           editorUid={uid}
           editorName={displayName}
