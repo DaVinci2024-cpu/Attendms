@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Ban, Loader2, LogOut, MapPin, MoreVertical, Pencil, X } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useEnterTransition } from "@/hooks/useEnterTransition";
@@ -31,6 +31,7 @@ function PunchActionsMenu({
 }) {
   const [open, setOpen] = useState(false);
   const show = useEnterTransition(open);
+  const containerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   // Left-anchored by default (menu's left edge under the button's), then
   // nudged back on-screen after measuring — a punch-in's button sits
@@ -50,6 +51,25 @@ function PunchActionsMenu({
     } else if (overflowLeft > 0) {
       setLeftOffsetPx((prev) => prev + overflowLeft);
     }
+  }, [open]);
+
+  // Closes on a tap/click anywhere outside the menu — a real listener on
+  // the tap itself, not an invisible full-screen backdrop competing for
+  // the same tap. A backdrop element would silently "eat" a tap meant for
+  // something else on the page (e.g. a Close button in a different
+  // section) whenever this menu was left open and the admin scrolled away
+  // without noticing — a stray open menu, anywhere on the page, could
+  // make an unrelated button look like it just doesn't respond. This
+  // closes the menu AND still lets that tap reach its real target.
+  useEffect(() => {
+    if (!open) return;
+    function handlePointerDown(e: PointerEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [open]);
 
   const details: string[] = [];
@@ -76,7 +96,7 @@ function PunchActionsMenu({
   }
 
   return (
-    <div className="relative">
+    <div className="relative" ref={containerRef}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -86,52 +106,44 @@ function PunchActionsMenu({
         <MoreVertical className="h-4 w-4" />
       </button>
       {open && (
-        <>
+        <div
+          ref={menuRef}
+          style={{ left: leftOffsetPx }}
+          className={`absolute top-full z-50 mt-1 w-60 origin-top-left rounded-lg bg-neutral-800 p-1.5 shadow-xl transition-all duration-150 ease-out ${
+            show ? "scale-100 opacity-100" : "scale-95 opacity-0"
+          }`}
+        >
+          {details.length > 0 && (
+            <>
+              <div className="flex flex-col gap-1 px-2.5 py-1.5 text-xs text-neutral-400">
+                {details.map((d, i) => (
+                  <p key={i}>{d}</p>
+                ))}
+              </div>
+              <div className="my-1 border-t border-neutral-700" />
+            </>
+          )}
           <button
             type="button"
-            aria-label="Close menu"
-            onClick={() => setOpen(false)}
-            className="fixed inset-0 z-40 cursor-default"
-          />
-          <div
-            ref={menuRef}
-            style={{ left: leftOffsetPx }}
-            className={`absolute top-full z-50 mt-1 w-60 origin-top-left rounded-lg bg-neutral-800 p-1.5 shadow-xl transition-all duration-150 ease-out ${
-              show ? "scale-100 opacity-100" : "scale-95 opacity-0"
-            }`}
+            onClick={() => {
+              setOpen(false);
+              onEditClick();
+            }}
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-neutral-200 hover:bg-neutral-700"
           >
-            {details.length > 0 && (
-              <>
-                <div className="flex flex-col gap-1 px-2.5 py-1.5 text-xs text-neutral-400">
-                  {details.map((d, i) => (
-                    <p key={i}>{d}</p>
-                  ))}
-                </div>
-                <div className="my-1 border-t border-neutral-700" />
-              </>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                onEditClick();
-              }}
-              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-neutral-200 hover:bg-neutral-700"
-            >
-              <Pencil className="h-4 w-4" /> Edit
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                onVoidClick();
-              }}
-              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-red-400 hover:bg-neutral-700"
-            >
-              <Ban className="h-4 w-4" /> Void
-            </button>
-          </div>
-        </>
+            <Pencil className="h-4 w-4" /> Edit
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onVoidClick();
+            }}
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-red-400 hover:bg-neutral-700"
+          >
+            <Ban className="h-4 w-4" /> Void
+          </button>
+        </div>
       )}
     </div>
   );
