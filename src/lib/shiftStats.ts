@@ -61,6 +61,41 @@ export function activeShifts(
   return active;
 }
 
+// The start time of the most recent timed shift (any column, any
+// department) that's already begun as of `now` — today's row, or
+// yesterday's if nothing's started yet today (the early-morning case,
+// same reasoning as activeShifts above). Used to split "currently clocked
+// in" into "this rotation" vs. carried over from an earlier one that
+// should have ended — not which specific shift someone's assigned to,
+// just the most recent rotation boundary company-wide. Null when there's
+// no schedule, or nothing timed has started yet at all.
+export function latestStartedShiftBoundary(
+  schedule: WeekSchedule | null,
+  weekStart: Date,
+  now: Date
+): Date | null {
+  if (!schedule) return null;
+  let latest: Date | null = null;
+
+  function scanRow(row: ScheduleRow | null, date: Date) {
+    if (!row) return;
+    for (const col of schedule!.columns) {
+      if (!col.startTime) continue;
+      const start = timeOnDate(date, col.startTime);
+      if (start.getTime() <= now.getTime() && (!latest || start.getTime() > latest.getTime())) {
+        latest = start;
+      }
+    }
+  }
+
+  scanRow(todayRow(schedule, weekStart, now), now);
+  const nf = companyFields(now);
+  const yesterday = companyTimeToUtc(nf.year, nf.month, nf.day - 1);
+  scanRow(todayRow(schedule, weekStart, yesterday), yesterday);
+
+  return latest;
+}
+
 // The single shift that most recently finished as of `now` — today's
 // latest-ending column that's already over, or (before anything's ended
 // yet today, e.g. early morning) yesterday's last one. Null if neither

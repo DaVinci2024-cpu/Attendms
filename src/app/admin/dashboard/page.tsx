@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, Clock3, Loader2, Plus, Users } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, LogOut, Loader2, Plus, Users } from "lucide-react";
 import { usePermissions } from "@/components/RequireAdmin";
 import { PageHeader } from "@/components/PageHeader";
 import { StatPill } from "@/components/StatPill";
@@ -10,13 +10,14 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { DetailSheet } from "@/components/DetailSheet";
 import {
   AddPunchModal,
+  BulkCloseShiftModal,
   CloseShiftModal,
   DayRowCard,
   EditAttendanceModal,
   VoidModal,
 } from "@/components/AttendanceRecords";
 import { fetchAllAttendance, fetchAllEmployees, fetchWeekSchedule } from "@/lib/firestoreRepo";
-import { pairSessions, formatDuration, groupSessionsByDay } from "@/lib/hours";
+import { pairSessions, formatDuration, groupSessionsByDay, type WorkSession } from "@/lib/hours";
 import { isVoided, punchStatus } from "@/lib/attendanceStatus";
 import { localDate, localTime } from "@/lib/dateFormat";
 import { companyEndOfDay, companyFields, companyTimeToUtc } from "@/lib/companyTime";
@@ -25,6 +26,7 @@ import { departmentSortKey, UNASSIGNED_DEPARTMENT } from "@/lib/departments";
 import { mondayOf, toWeekId } from "@/lib/week";
 import {
   activeShifts,
+  latestStartedShiftBoundary,
   mostRecentlyEndedShift,
   noShowsToday,
   nextScheduledShift,
@@ -58,6 +60,7 @@ function Dashboard() {
     employeeId: string;
     employeeName: string;
   } | null>(null);
+  const [bulkClosing, setBulkClosing] = useState(false);
   const [openDetail, setOpenDetail] = useState<
     "headcount" | "noshows" | "hours" | "ontime" | null
   >(null);
@@ -136,6 +139,11 @@ function Dashboard() {
     setClosingShiftFor(null);
   }
 
+  function handleShiftsBulkClosed(newLogs: AttendanceLog[]) {
+    setLogs((prev) => [...prev, ...newLogs]);
+    setBulkClosing(false);
+  }
+
   function handlePunchAdded(newLog: AttendanceLog) {
     setLogs((prev) => [...prev, newLog]);
     setAddingPunch(false);
@@ -173,6 +181,30 @@ function Dashboard() {
   );
 
   const weekStart = useMemo(() => mondayOf(now), [now]);
+
+  // Splits "currently clocked in" into whoever punched in for the most
+  // recent rotation (shown first) vs. anyone still open from before that
+  // boundary — almost always a forgotten punch-out from an earlier shift,
+  // not someone legitimately still working. Falls back to one undivided
+  // list when there's no schedule to find a boundary in.
+  const shiftBoundary = useMemo(
+    () => latestStartedShiftBoundary(schedule, weekStart, now),
+    [schedule, weekStart, now]
+  );
+  const currentRotationIn = useMemo(
+    () =>
+      shiftBoundary
+        ? currentlyIn.filter((s) => new Date(s.punchIn.timestamp).getTime() >= shiftBoundary.getTime())
+        : currentlyIn,
+    [currentlyIn, shiftBoundary]
+  );
+  const earlierShiftIn = useMemo(
+    () =>
+      shiftBoundary
+        ? currentlyIn.filter((s) => new Date(s.punchIn.timestamp).getTime() < shiftBoundary.getTime())
+        : [],
+    [currentlyIn, shiftBoundary]
+  );
 
   // The shift(s) actually running right now — drives the headcount,
   // hours, and on-time pills below; each falls back to a "today, no
@@ -378,25 +410,55 @@ function Dashboard() {
                 Nobody is currently clocked in.
               </p>
             ) : (
-              <ul className="flex flex-col gap-1">
-                {currentlyIn.map((s) => (
-                  <li
-                    key={s.punchIn.logId}
-                    className="flex justify-between text-sm"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setSummaryEmployeeId(s.employeeId)}
-                      className="hover:underline"
-                    >
-                      {s.employeeName}
-                    </button>
-                    <span className="text-neutral-400">
-                      since {localTime(s.punchIn.timestamp)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <ul className="flex flex-col gap-1">
+                  {currentRotationIn.map((s) => (
+                    <ClockedInRow
+                      key={s.punchIn.logId}
+                      session={s}
+                      canEdit={canEdit}
+                      onNameClick={() => setSummaryEmployeeId(s.employeeId)}
+                      onCloseShift={() =>
+                        setClosingShiftFor({ employeeId: s.employeeId, employeeName: s.employeeName })
+                      }
+                    />
+                  ))}
+                </ul>
+
+                {earlierShiftIn.length > 0 && (
+                  <>
+                    <div className="my-3 flex items-center gap-2">
+                      <span className="h-px flex-1 bg-neutral-800" />
+                      <span className="text-xs text-neutral-500">
+                        From an earlier shift ({earlierShiftIn.length})
+                      </span>
+                      <span className="h-px flex-1 bg-neutral-800" />
+                    </div>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => setBulkClosing(true)}
+                        className="mb-2 flex items-center gap-1.5 rounded-lg bg-neutral-800 px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-700"
+                      >
+                        <LogOut className="h-3.5 w-3.5" /> Close all {earlierShiftIn.length} below
+                      </button>
+                    )}
+                    <ul className="flex flex-col gap-1">
+                      {earlierShiftIn.map((s) => (
+                        <ClockedInRow
+                          key={s.punchIn.logId}
+                          session={s}
+                          canEdit={canEdit}
+                          onNameClick={() => setSummaryEmployeeId(s.employeeId)}
+                          onCloseShift={() =>
+                            setClosingShiftFor({ employeeId: s.employeeId, employeeName: s.employeeName })
+                          }
+                        />
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </>
             )}
           </section>
 
@@ -462,6 +524,19 @@ function Dashboard() {
           editorName={displayName}
           onClose={() => setClosingShiftFor(null)}
           onSaved={handleShiftClosed}
+        />
+      )}
+
+      {bulkClosing && (
+        <BulkCloseShiftModal
+          employees={earlierShiftIn.map((s) => ({
+            employeeId: s.employeeId,
+            employeeName: s.employeeName,
+          }))}
+          editorUid={uid}
+          editorName={displayName}
+          onClose={() => setBulkClosing(false)}
+          onSaved={handleShiftsBulkClosed}
         />
       )}
 
@@ -772,5 +847,44 @@ function EmployeeSummaryPopup({
         </p>
       </div>
     </DetailSheet>
+  );
+}
+
+// One row in the "currently clocked in" list — a clickable name (opens
+// the employee summary popup) and, for anyone with edit access, a
+// one-tap way to close that specific shift without leaving the
+// dashboard. Shared between the "this rotation" and "earlier shift"
+// groups so they stay visually identical apart from which group they're
+// in.
+function ClockedInRow({
+  session,
+  canEdit,
+  onNameClick,
+  onCloseShift,
+}: {
+  session: WorkSession;
+  canEdit: boolean;
+  onNameClick: () => void;
+  onCloseShift: () => void;
+}) {
+  return (
+    <li className="flex items-center justify-between gap-2 text-sm">
+      <button type="button" onClick={onNameClick} className="hover:underline">
+        {session.employeeName}
+      </button>
+      <span className="flex items-center gap-2">
+        <span className="text-neutral-400">since {localTime(session.punchIn.timestamp)}</span>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={onCloseShift}
+            className="flex items-center gap-1 rounded-full bg-neutral-800 px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-700"
+            title="Close this shift (employee forgot to punch out)"
+          >
+            <LogOut className="h-3 w-3" /> Close
+          </button>
+        )}
+      </span>
+    </li>
   );
 }

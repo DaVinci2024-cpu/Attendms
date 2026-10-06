@@ -488,6 +488,125 @@ export function CloseShiftModal({
   );
 }
 
+// Same idea as CloseShiftModal, but for a whole batch at once — e.g. a
+// handful of people left over from an earlier shift who all forgot to
+// punch out. One punch-out time and one reason applies to everyone
+// listed; each still gets its own real AttendanceLog (and its own audit
+// entry), just created together instead of one modal per person.
+export function BulkCloseShiftModal({
+  employees,
+  editorUid,
+  editorName,
+  onClose,
+  onSaved,
+}: {
+  employees: { employeeId: string; employeeName: string }[];
+  editorUid: string;
+  editorName: string;
+  onClose: () => void;
+  onSaved: (logs: AttendanceLog[]) => void;
+}) {
+  const [newTime, setNewTime] = useState(() => toDatetimeLocalValue(new Date().toISOString()));
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const show = useEnterTransition();
+
+  async function handleSave() {
+    if (!reason.trim()) {
+      setError("A reason is required.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const newIso = companyDatetimeLocalToUtc(newTime).toISOString();
+      const logs = await Promise.all(
+        employees.map((e) =>
+          closeShift(e.employeeId, e.employeeName, newIso, reason.trim(), editorUid, editorName)
+        )
+      );
+      onSaved(logs);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to close shifts");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 transition-opacity duration-200 ease-out ${
+        show ? "opacity-100" : "opacity-0"
+      }`}
+    >
+      <div
+        className={`flex w-full max-w-sm flex-col gap-4 rounded-xl bg-neutral-900 p-6 transition-all duration-200 ease-out ${
+          show ? "scale-100 opacity-100" : "scale-95 opacity-0"
+        }`}
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">
+            Close {employees.length} shift{employees.length === 1 ? "" : "s"}
+          </h2>
+          <button type="button" onClick={onClose} className="text-neutral-400 hover:text-neutral-200">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <p className="text-sm text-neutral-400">
+          Records the same punch-out time for everyone below — for staff left over from
+          an earlier shift who forgot to clock out.
+        </p>
+        <ul className="flex max-h-32 flex-col gap-0.5 overflow-y-auto text-sm text-neutral-300">
+          {employees.map((e) => (
+            <li key={e.employeeId}>{e.employeeName}</li>
+          ))}
+        </ul>
+
+        <label className="flex flex-col gap-1 text-sm">
+          Punch-out time
+          <input
+            type="datetime-local"
+            className="rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-600"
+            value={newTime}
+            onChange={(e) => setNewTime(e.target.value)}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          Reason (required)
+          <textarea
+            className="min-h-20 rounded-lg bg-neutral-800 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-600"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. Morning shift, confirmed everyone left by 3pm"
+          />
+        </label>
+
+        {error && <p className="text-sm text-red-400">{error}</p>}
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-lg bg-neutral-800 px-4 py-2 text-sm text-neutral-300 hover:bg-neutral-700"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-neutral-700"
+          >
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            Close {employees.length} shift{employees.length === 1 ? "" : "s"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function VoidModal({
   log,
   editorUid,
