@@ -61,7 +61,18 @@ export default function PortalPage() {
   const [employee, setEmployee] = useState<Employee | null | undefined>(undefined);
 
   useEffect(() => {
-    return onAuthStateChanged(getAuthClient(), setUser);
+    function start() {
+      try {
+        return onAuthStateChanged(getAuthClient(), setUser);
+      } catch {
+        // No Firebase project connected on this install yet (see
+        // RequireAdmin.tsx's matching guard) — nobody can be signed in
+        // either way, so this behaves the same as "signed out".
+        setUser(null);
+        return undefined;
+      }
+    }
+    return start();
   }, []);
 
   useEffect(() => {

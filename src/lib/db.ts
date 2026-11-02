@@ -169,3 +169,29 @@ export const SYNCED_TABLES = [
 ] as const;
 
 export type SyncedTableName = (typeof SYNCED_TABLES)[number];
+
+// Which field each table uses as its id — the same Dexie primary key named
+// in each table's .stores() entry above, and the field name sync (both the
+// client's push()/pull() in syncService.ts and the server routes under
+// src/app/api/sync and src/app/api/lan) uses as the Firestore doc id too.
+// One shared source so nothing has to guess an id field from a record's
+// shape.
+export const ID_FIELD: Record<SyncedTableName, string> = {
+  company: "companyId",
+  employees: "employeeId",
+  attendance: "logId",
+  suspiciousEvents: "eventId",
+  schedules: "weekId",
+  scheduleColumnTemplate: "id",
+  kioskDisplaySettings: "id",
+  authPolicy: "id",
+  locationPolicy: "id",
+  permissionGrants: "uid",
+  shiftSupervisorGrants: "uid",
+  shiftSupervisorPermissionSettings: "id",
+  scheduleExemptions: "employeeId",
+  announcements: "announcementId",
+  availability: "docId",
+  shiftNotes: "noteId",
+  activityLog: "id",
+};

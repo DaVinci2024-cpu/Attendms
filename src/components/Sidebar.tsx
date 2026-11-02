@@ -13,6 +13,7 @@ import {
   Megaphone,
   Menu,
   ScanFace,
+  Server,
   Settings,
   ShieldCheck,
   TrendingUp,
@@ -27,7 +28,7 @@ interface NavLink {
   href: string;
   label: string;
   icon: typeof Home;
-  visible: (has: (p: Permission) => boolean) => boolean;
+  visible: (has: (p: Permission) => boolean, isAdmin: boolean) => boolean;
 }
 
 const LINKS: NavLink[] = [
@@ -86,6 +87,16 @@ const LINKS: NavLink[] = [
     icon: TrendingUp,
     visible: (has) => has("view_reports"),
   },
+  {
+    href: "/system",
+    label: "System",
+    icon: Server,
+    // Cloud project credentials, LAN pairing, and full-data backup/restore
+    // are full-admin-only, not delegable like the permissions above — same
+    // reasoning as retailrp gating its own Firebase/network settings to
+    // the Admin role specifically.
+    visible: (_has, isAdmin) => isAdmin,
+  },
 ];
 
 // Remembered per-browser so a desktop admin's collapse preference sticks
@@ -94,7 +105,7 @@ const COLLAPSE_STORAGE_KEY = "attendms_sidebar_collapsed";
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { has } = usePermissions();
+  const { has, isAdmin } = usePermissions();
   // Lazy initializer (not an effect) so this reads synchronously on first
   // render — an effect-based version would flip the layout a beat after
   // mount, a visible jump on a page that's otherwise static.
@@ -124,7 +135,7 @@ export function Sidebar() {
   // Only sections this account actually has a permission for — the same
   // has() gating the pages themselves use, so the sidebar can never
   // advertise a section that would just bounce back to "access denied".
-  const visibleLinks = LINKS.filter((link) => link.visible(has));
+  const visibleLinks = LINKS.filter((link) => link.visible(has, isAdmin));
 
   const links = (
     <nav className="flex flex-1 flex-col gap-1">

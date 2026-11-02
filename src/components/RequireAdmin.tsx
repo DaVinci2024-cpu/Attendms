@@ -7,6 +7,7 @@ import {
   signOut,
   type User,
 } from "firebase/auth";
+import Link from "next/link";
 import { Loader2, LogOut, ShieldAlert } from "lucide-react";
 import { getAuthClient } from "@/lib/auth";
 import {
@@ -83,12 +84,26 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [signingIn, setSigningIn] = useState(false);
+  // Only set on a totally fresh install, before System > Cloud Sync has
+  // ever connected a Firebase project — getAuthClient() throws in that
+  // state (see firebase.ts), which would otherwise crash this whole
+  // component tree the moment any /admin/* page is visited, since it's
+  // called from inside an effect with nothing upstream to catch it.
+  const [notConfigured, setNotConfigured] = useState(false);
 
   useEffect(() => {
-    return onAuthStateChanged(getAuthClient(), (u) => {
-      setUser(u);
-      setAccess({ status: "checking" });
-    });
+    function start() {
+      try {
+        return onAuthStateChanged(getAuthClient(), (u) => {
+          setUser(u);
+          setAccess({ status: "checking" });
+        });
+      } catch {
+        setNotConfigured(true);
+        return undefined;
+      }
+    }
+    return start();
   }, []);
 
   // "Signed in" no longer implies any particular access level — could be a
@@ -164,6 +179,23 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
     } finally {
       setSigningIn(false);
     }
+  }
+
+  if (notConfigured) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-4 text-center">
+        <ShieldAlert className="h-8 w-8 text-amber-400" />
+        <p className="max-w-sm text-sm text-neutral-300">
+          This installation hasn&apos;t connected a Firebase project yet, so nobody can sign in.
+        </p>
+        <Link
+          href="/system"
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+        >
+          Go to System &gt; Cloud Sync
+        </Link>
+      </div>
+    );
   }
 
   if (user === undefined || (user && access.status === "checking")) {

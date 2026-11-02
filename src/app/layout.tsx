@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { RegisterServiceWorker } from "@/components/RegisterServiceWorker";
+import { SyncServiceInit } from "@/components/SyncServiceInit";
+import { getStoredWebConfig } from "@/lib/server/firebaseConfigStore";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -29,18 +31,40 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+// A Server Component (no "use client") specifically so this can read the
+// stored Firebase web config directly off disk, same process, and embed it
+// into the very first HTML response — src/lib/firebase.ts reads it back off
+// `window.__FIREBASE_WEB_CONFIG__` synchronously on the client. Doing this
+// server-side avoids an async fetch-then-initialize race on every page load
+// against RequireAdmin's own mount effect (which needs Firebase Auth
+// initialized immediately), and replaces the old NEXT_PUBLIC_FIREBASE_*
+// build-time env vars — there's no longer a "build time" per business once
+// this ships as one Electron binary for every install (see Phase 2).
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const webConfig = getStoredWebConfig();
+
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        {webConfig && (
+          <script
+            // Safe: webConfig only ever holds the public, non-secret fields
+            // documented on StoredWebConfig — the same values Firebase
+            // itself expects to ship inside a public client bundle.
+            dangerouslySetInnerHTML={{
+              __html: `window.__FIREBASE_WEB_CONFIG__ = ${JSON.stringify(webConfig)};`,
+            }}
+          />
+        )}
         <RegisterServiceWorker />
+        <SyncServiceInit />
         {children}
       </body>
     </html>
