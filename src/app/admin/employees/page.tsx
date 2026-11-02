@@ -30,7 +30,7 @@ import {
   setEmployeeSupervisorFlag,
   updateEmployeeDepartment,
   updateEmployeeName,
-} from "@/lib/firestoreRepo";
+} from "@/lib/dexieRepo";
 import { createEmployeePortalAccount } from "@/lib/auth";
 import { findByPin, hashPin, PIN_PATTERN } from "@/lib/pin";
 import { averageTimeOfDay, formatDuration, pairSessions, type WorkSession } from "@/lib/hours";

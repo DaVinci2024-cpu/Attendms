@@ -35,7 +35,7 @@ import {
   fetchWeekSchedule,
   recordPunch,
   recordSuspiciousEvent,
-} from "@/lib/firestoreRepo";
+} from "@/lib/dexieRepo";
 import {
   findCurrentSupervisor,
   isEarlyPunchOut,

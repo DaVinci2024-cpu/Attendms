@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, Loader2, Trophy } from "lucide-react";
 import { usePermissions } from "@/components/RequireAdmin";
 import { PageHeader } from "@/components/PageHeader";
-import { fetchAllAttendance, fetchAllEmployees, fetchWeekSchedule } from "@/lib/firestoreRepo";
+import { fetchAllAttendance, fetchAllEmployees, fetchWeekSchedule } from "@/lib/dexieRepo";
 import { averageScore, computeEmployeePerformance, type EmployeePerformance } from "@/lib/performance";
 import { weekIdsBack } from "@/lib/week";
 import { companyDateKeyToUtc } from "@/lib/companyTime";

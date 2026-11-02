@@ -15,7 +15,7 @@ import {
   savePermissionGrant,
   saveScheduleExemption,
   saveShiftSupervisorPermissionSettings,
-} from "@/lib/firestoreRepo";
+} from "@/lib/dexieRepo";
 import {
   ALL_PERMISSIONS,
   PERMISSION_LABELS,

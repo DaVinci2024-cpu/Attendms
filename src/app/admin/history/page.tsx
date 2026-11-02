@@ -13,7 +13,7 @@ import {
   EditAttendanceModal,
   VoidModal,
 } from "@/components/AttendanceRecords";
-import { fetchAllAttendance, fetchAllEmployees } from "@/lib/firestoreRepo";
+import { fetchAllAttendance, fetchAllEmployees } from "@/lib/dexieRepo";
 import { averageTimeOfDay, formatDuration, groupSessionsByDay, pairSessions } from "@/lib/hours";
 import { isVoided, punchStatus } from "@/lib/attendanceStatus";
 import { localDate } from "@/lib/dateFormat";

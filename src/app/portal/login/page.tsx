@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { getAuthClient } from "@/lib/auth";
-import { fetchEmployeeByPortalUsername } from "@/lib/firestoreRepo";
+import { fetchEmployeeByPortalUsername } from "@/lib/dexieRepo";
 import { portalEmail } from "@/lib/constants";
 
 export default function PortalLoginPage() {

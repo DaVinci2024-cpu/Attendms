@@ -15,7 +15,7 @@ import {
   fetchEmployeeByAuthUid,
   fetchEmployeeByPortalUsername,
   fetchPermissionGrant,
-} from "@/lib/firestoreRepo";
+} from "@/lib/dexieRepo";
 import { grantHas } from "@/lib/permissions";
 import { portalEmail } from "@/lib/constants";
 import { Sidebar } from "@/components/Sidebar";

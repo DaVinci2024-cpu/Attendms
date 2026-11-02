@@ -9,7 +9,7 @@ import {
   createManualAttendanceLog,
   editAttendanceLog,
   voidAttendanceLog,
-} from "@/lib/firestoreRepo";
+} from "@/lib/dexieRepo";
 import { formatDuration, type DayRow } from "@/lib/hours";
 import { isVoided, punchStatus } from "@/lib/attendanceStatus";
 import { localTime, toDatetimeLocalValue } from "@/lib/dateFormat";

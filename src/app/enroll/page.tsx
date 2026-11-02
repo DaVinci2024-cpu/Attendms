@@ -14,7 +14,7 @@ import {
   ensureCompanyDoc,
   fetchAllEmployees,
   fetchAuthPolicy,
-} from "@/lib/firestoreRepo";
+} from "@/lib/dexieRepo";
 import { findByPin, hashPin, PIN_PATTERN } from "@/lib/pin";
 import { CONSENT_POLICY_VERSION } from "@/lib/constants";
 import type { Employee } from "@/lib/types";

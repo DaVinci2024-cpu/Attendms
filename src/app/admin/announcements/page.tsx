@@ -8,7 +8,7 @@ import {
   deleteAnnouncement,
   fetchAnnouncements,
   postAnnouncement,
-} from "@/lib/firestoreRepo";
+} from "@/lib/dexieRepo";
 import { COMPANY_TIME_ZONE } from "@/lib/companyTime";
 import type { Announcement } from "@/lib/types";
 

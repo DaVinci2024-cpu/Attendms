@@ -32,7 +32,7 @@ import {
   fetchWeekSchedule,
   postShiftNote,
   saveAvailability,
-} from "@/lib/firestoreRepo";
+} from "@/lib/dexieRepo";
 import { pairSessions, formatDuration } from "@/lib/hours";
 import { localDate, localTime } from "@/lib/dateFormat";
 import {

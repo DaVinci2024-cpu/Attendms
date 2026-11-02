@@ -19,7 +19,7 @@ import {
   saveAuthPolicy,
   saveKioskDisplaySettings,
   saveLocationPolicy,
-} from "@/lib/firestoreRepo";
+} from "@/lib/dexieRepo";
 import { requestPosition } from "@/lib/geolocation";
 import { usePermissions } from "@/components/RequireAdmin";
 import { COMPANY_NAME } from "@/lib/constants";

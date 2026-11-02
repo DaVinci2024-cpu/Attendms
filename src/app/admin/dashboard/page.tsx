@@ -15,7 +15,7 @@ import {
   EditAttendanceModal,
   VoidModal,
 } from "@/components/AttendanceRecords";
-import { fetchAllAttendance, fetchAllEmployees, fetchWeekSchedule } from "@/lib/firestoreRepo";
+import { fetchAllAttendance, fetchAllEmployees, fetchWeekSchedule } from "@/lib/dexieRepo";
 import { pairSessions, formatDuration, groupSessionsByDay, type WorkSession } from "@/lib/hours";
 import { isVoided, punchStatus } from "@/lib/attendanceStatus";
 import { localDate, localTime } from "@/lib/dateFormat";

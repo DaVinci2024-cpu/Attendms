@@ -30,7 +30,7 @@ import {
   postShiftNote,
   saveScheduleColumnTemplate,
   saveWeekSchedule,
-} from "@/lib/firestoreRepo";
+} from "@/lib/dexieRepo";
 import { cellAssignments, defaultColumns } from "@/lib/schedule";
 import { columnColor, type ColumnColor } from "@/lib/columnColors";
 import { DEPARTMENT_PRESETS } from "@/lib/constants";
